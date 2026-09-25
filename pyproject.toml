@@ -1,0 +1,12 @@
+[project]
+name = "gpx-stuff"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "contextily>=1.7.1",
+    "gpxpy>=1.6.2",
+    "matplotlib>=3.11.2",
+    "pyproj>=3.7.2",
+]
