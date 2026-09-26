@@ -9,7 +9,7 @@
 
 ## 0. One-line pitch
 
-Turn a GPX file into a short, animated, brandable MP4 (and eventually a GUI-driven
+Turn a GPX file into a short, animated, brandable MP4 with a CLI tool (and eventually a GUI-driven
 visual builder) — with a clean, testable, hexagonal Python codebase.
 
 ---
@@ -213,6 +213,8 @@ repos:
   4. Environment variables (`GPX_ANIMATE_*`)
   5. CLI flags / GUI widgets (highest priority)
 - **Never mutate** the defaults dict — copy per run.
+- Nested groups are TOML tables and env-var sub-keys, e.g. `gif.colors` lives in
+  `[gif]` in the toml layers and in `GPX_ANIMATE_GIF_COLORS` in the environment.
 - Every config key must be documented in `README.md` and referenceable by an agent.
 
 ---
@@ -370,22 +372,56 @@ add features without breaking things.
 GIF **so that** I can embed it where video is not supported (blog posts, issue
 trackers, chat).
 
+**Sizing principle:** the GIF is a *downgrade* of the video, never a second
+render at video quality. A GIF at MP4 resolution and 256 colors routinely lands
+in the tens of megabytes for a few seconds of animation, which is slow to
+encode, slow to upload, and slow for a reader to load. Every knob below exists
+to keep it small.
+
+**Defaults** — in `config/defaults.py` as `GIF_DEFAULTS`, overridable via the
+`[gif]` table in the toml layers and per-flag on the CLI:
+
+```python
+GIF_DEFAULTS = {
+    "enabled": False,
+    "size": "800x450",   # px, independent of the SIZES aspect presets
+    "fps": 15,           # half the MP4 rate is fine
+    "colors": 128,       # 64 | 128 | 256
+    "dither": False,     # off = smaller
+    "loop": 0,           # 0 = infinite
+}
+```
+
 **Acceptance criteria:**
-- `--gif` is opt-in; the MP4 is always produced. Default output path is
-  `<out_stem>.gif` next to the MP4.
+- `enabled` defaults to `False`: no GIF is written unless asked. The MP4 is
+  always produced, and **the MP4 encode is untouched** — CRF 18, `yuv420p`, full
+  `dpi`. Every quality reduction applies to the GIF only.
 - Implemented as a second `Encoder` adapter (`adapters/encoders/gif_encoder.py`) —
   no new port, no duplicated frame logic.
 - Encoded from the same PNG frames as the MP4, and before the temp dir is cleaned
-  up: MP4 first, GIF second.
-- `--gif-fps` (default `15.0`) samples every Nth rendered frame; a value greater
-  than `fps` is rejected with a clear error.
-- `--gif-loop` (default `0`, i.e. loop forever) sets the loop count.
-- Frames are quantized to an adaptive 256-color palette. No audio, no alpha
-  animation. GIFs are expected to be far larger than the MP4 — CRF-style knobs
-  do not apply.
+  up: MP4 first, GIF second. The frames are **downscaled, not re-rendered** — a
+  second render pass would cost more than it saves.
+- `size` is honoured exactly as `WIDTHxHEIGHT`, independent of `SIZES`. Frames
+  are scaled to *cover* the box and center-cropped (`ImageOps.fit`), so a `9:16`
+  MP4 into an `800x450` GIF crops rather than distorts. Invalid or unparsable
+  sizes are rejected with a clear error.
+- `fps` samples every Nth rendered frame, `N = max(1, round(fps / gif.fps))`.
+  A `gif.fps` greater than the MP4 `fps` is rejected — frames cannot be invented.
+  Note that GIF stores frame delays in centiseconds, so 15 fps is written as
+  70 ms (~14.3 fps effective); document the rounding rather than fight it.
+- `colors` must be one of 64, 128, 256; anything else is rejected before
+  rendering starts. Quantization is adaptive, per frame.
+- `dither` off uses `Image.Dither.NONE`; on uses the default dither. Dithering
+  costs bytes, so the default is off.
+- `loop = 0` means infinite.
+- No audio, no alpha animation.
+- The encode step logs one line with the result — path, byte size, frame count —
+  so a size regression is visible without opening the file.
 - Missing Pillow → clear error, non-zero exit, checked before rendering starts.
-- Tests: frame count and sampling, loop value, palette mode, `--gif` absent writes
-  no file, invalid `--gif-fps` rejected.
+- Tests: output dimensions and center-crop, frame count and sampling, quantize
+  palette size, dither on/off, loop value, `enabled = False` writes no file,
+  invalid `size`/`colors`/`fps` rejected, and **MP4 encoder arguments unchanged
+  when the GIF is enabled**.
 
 ---
 
@@ -408,6 +444,18 @@ class Track:
     def elevation_gain_m(self) -> float: ...
 
 @dataclass(frozen=True)
+class GifConfig:
+    """Deliberately low-quality GIF, independent of the MP4 render settings."""
+
+    enabled: bool
+    size: str          # "WIDTHxHEIGHT" px, e.g. "800x450"
+    fps: int
+    colors: int        # 64 | 128 | 256
+    dither: bool
+    loop: int          # 0 = infinite
+    path: Path | None  # None -> <out_stem>.gif
+
+@dataclass(frozen=True)
 class RenderConfig:
     style: str
     duration: float
@@ -420,9 +468,7 @@ class RenderConfig:
     logo_start: str | None
     logo_end: str | None
     logo_marker: str | None
-    gif: bool
-    gif_fps: float
-    gif_loop: int
+    gif: GifConfig
     # …colors, fonts, output_dir, force
 
 @dataclass(frozen=True)
@@ -459,8 +505,11 @@ Options:
   --logo-marker TEXT
   --out PATH                Output file (default: ./output/<stem>__<ts>.mp4)
   --force                   Overwrite if --out exists
-  --gif [PATH]              Also write an animated GIF (default: <out_stem>.gif)
-  --gif-fps FLOAT           GIF frame rate, must be <= fps [default: 15.0]
+  --gif [PATH]              Also write a GIF (enables [gif] in config)
+  --gif-size WIDTHxHEIGHT   GIF pixel box, independent of --size [default: 800x450]
+  --gif-fps INTEGER         GIF frame rate, must be <= fps [default: 15]
+  --gif-colors [64|128|256] GIF palette size [default: 128]
+  --gif-dither / --no-gif-dither   [default: off]
   --gif-loop INTEGER        GIF loop count, 0 = forever [default: 0]
   --log-level [DEBUG|INFO|WARNING|ERROR]
   --help
@@ -481,7 +530,8 @@ Options:
 9. **M8 — PyQt GUI** (US-8).
 10. **M9 — Hillshade / 3D TIFF** (future, separate spec).
 11. **M10 — GIF export** (US-10). Independent of the other milestones; can land
-    any time after M2, since it only needs the `Encoder` port.
+    any time after M2, since it only needs the `Encoder` port. Ships after M4 so
+    the `none` basemap provider is available for cheap, fast test renders.
 
 ---
 
