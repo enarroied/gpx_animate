@@ -11,10 +11,13 @@ The repo is a **single-file script**, not the package the spec describes.
 - `gpx_animate.py` (~430 lines) is the whole program: `CONFIG`, `STYLES`, `SIZES`,
   GPX parsing, geometry, matplotlib frame rendering, ffmpeg encode, argparse CLI.
   There is no `src/`, no package, no console entry points.
-- `pyproject.toml`: project name is `gpx-stuff` (README/SPECS say `gpx-animate`).
-  No `[tool.ruff]`, no dev deps, no `[build-system]`. The script imports `numpy`
-  and `requests` without declaring them (they arrive transitively via
-  matplotlib/contextily) — declare any new direct import here.
+- `pyproject.toml`: no `[tool.ruff]`, no dev deps, no `[build-system]` — the
+  project is *virtual* (`uv.lock` marks it `source = { virtual = "." }`), so
+  `uv sync` does not install it and there is no `gpx-animate` entry point. The
+  script imports `numpy` and `requests` without declaring them (they arrive
+  transitively via matplotlib/contextily) — declare any new direct import here.
+  Don't add `[build-system]` before the `src/` package exists; it would make
+  `uv sync` try to install a project with nothing importable.
 - **No tests, no linter, no type checker, no pre-commit, no CI.** ruff, ty,
   vulture, and pytest exist only as spec text (SPECS §4). Don't run or cite them;
   they will fail with "command not found". SPECS §4.7 makes bootstrapping them
@@ -41,6 +44,42 @@ uv run gpx_animate.py trip.gpx --duration 0.2 --fps 5 --out /tmp/x.mp4
 
 No test / lint / typecheck command exists yet. Until tooling lands, the only
 verification is running the script end to end on a real GPX.
+
+## Versioning & releases
+
+`pyproject.toml`'s `version` is the single source of truth. Bump it with
+`uv version --bump minor|patch` — it edits the manifest and re-locks, so no
+`bump2version`/`bump-my-version` needed. **GitHub Releases only, no PyPI**, so
+there is no publish token to manage and no need for a `[build-system]` before
+the `src/` package lands.
+
+| Version | Scope | Exit criteria |
+|---|---|---|
+| `0.0.0` | now: unreleased single-file script | no tags yet |
+| `0.1.0` | SPECS M0–M6 + US-10 GIF, packaged CLI | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
+| `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
+| `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
+
+The GUI is its own minor bump because it is a *new adapter* over a frozen
+application layer — new capability, no breaking change. M0–M6 is invisible to
+users, so it stays in `[Unreleased]` rather than burning a version number on a
+refactor.
+
+Cut procedure:
+
+```bash
+uv version --bump minor              # 0.0.0 -> 0.1.0 (manifest + uv.lock)
+# edit CHANGELOG.md: [Unreleased] -> [0.1.0] - <YYYY-MM-DD>, add compare link
+git add pyproject.toml uv.lock CHANGELOG.md
+git commit -m "chore: release 0.1.0"
+git tag -a v0.1.0 -m "0.1.0"
+git push origin HEAD --follow-tags
+gh release create v0.1.0 --title "0.1.0" --notes-file <changelog-section>
+```
+
+Stage the release files explicitly — `git commit -a` will sweep in unrelated
+work-in-progress edits. Same reason: any user-visible change updates
+`CHANGELOG.md` in the same commit.
 
 ## Gotchas in gpx_animate.py
 
