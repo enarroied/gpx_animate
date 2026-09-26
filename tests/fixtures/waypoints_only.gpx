@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="gpx-animate tests"
+     xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Nothing Here</name>
+  </metadata>
+  <wpt lat="45.0" lon="7.0">
+    <name>ignored waypoint</name>
+  </wpt>
+</gpx>

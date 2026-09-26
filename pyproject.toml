@@ -48,3 +48,32 @@ lines-after-imports = 2
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# gpx_animate.py is a top-level script, not an installed package, so the repo
+# root has to be importable. This replaces the sys.path hack SPECS US-2 removes
+# once the code lives in src/gpx_animate.
+pythonpath = ["."]
+# The integration tests need ffmpeg and the tile servers; opt in with
+# `pytest -m integration`. CI runs them as a non-blocking step instead.
+addopts = "-ra --strict-markers -m 'not integration'"
+markers = [
+    "integration: needs ffmpeg on PATH and network access to tile servers",
+]
+
+[tool.coverage.run]
+source = ["gpx_animate"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+# SPECS US-3 targets >= 85% on domain/ and application/ after M2. The monolith
+# is a single module including the CLI, so the floor starts here and ratchets
+# up. Revisit it at M2: US-3 sets no target on adapters, so one global floor
+# stops being the right shape once the code is split.
+fail_under = 90
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]

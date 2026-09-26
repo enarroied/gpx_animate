@@ -33,18 +33,15 @@ jobs:
         run: uv run ty check .
 
       - name: Dead code
-        run: uv run vulture gpx_animate.py --min-confidence 80
+        run: uv run vulture gpx_animate.py tests --min-confidence 80
 
       - name: Tests
-        # Exit 5 means "no tests collected" — the first test lands in M1
-        # (SPECS US-3). Tolerated here so the pipeline is green before then.
-        run: uv run pytest -q || [ $? -eq 5 ]
+        run: uv run pytest -q --cov --cov-report=xml
 
-      - name: Coverage upload
-        # No gate yet: the >= 85% target applies to domain/ and application/
-        # after M2. Non-blocking so a first-run upload failure is not fatal.
+      - name: Integration tests
+        # Needs tile servers, so a flaky provider must not turn the build red.
         continue-on-error: true
-        run: uv run pytest -q --cov=gpx_animate --cov-report=xml || [ $? -eq 5 ]
+        run: uv run pytest -q -m integration
 
       - name: Upload coverage to Codecov
         continue-on-error: true

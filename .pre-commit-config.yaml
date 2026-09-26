@@ -24,16 +24,15 @@ repos:
         always_run: true
       - id: vulture
         name: vulture
-        entry: uv run vulture gpx_animate.py --min-confidence 80
+        entry: uv run vulture gpx_animate.py tests --min-confidence 80
         language: system
         pass_filenames: false
         always_run: true
       - id: pytest
         name: pytest
-        # Exit 5 = "no tests collected" until M1 adds the first test. The
-        # bash -c wrapper is required: `language: system` hooks are not run
-        # through a shell, so a bare `||` would be passed to pytest as arguments.
-        entry: bash -c 'uv run pytest -q || [ $? -eq 5 ]'
+        # No coverage here: the suite is fast, but the >= 90% floor is CI's job
+        # (see the Tests step in .github/workflows/ci.yml).
+        entry: uv run pytest -q
         language: system
         pass_filenames: false
         always_run: true

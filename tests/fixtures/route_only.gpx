@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="gpx-animate tests"
+     xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Route Only</name>
+  </metadata>
+  <rte>
+    <name>Route Only</name>
+    <rtept lat="45.0000" lon="7.0000"><ele>200</ele></rtept>
+    <rtept lat="45.0010" lon="7.0010"><ele>210</ele></rtept>
+    <rtept lat="45.0020" lon="7.0020"><ele>205</ele></rtept>
+  </rte>
+</gpx>

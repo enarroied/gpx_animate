@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="gpx-animate tests"
+     xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Test Track</name>
+  </metadata>
+  <trk>
+    <name>Test Track</name>
+    <trkseg>
+      <trkpt lat="45.0000" lon="7.0000"><ele>100</ele></trkpt>
+      <trkpt lat="45.0010" lon="7.0000"><ele>105</ele></trkpt>
+      <trkpt lat="45.0020" lon="7.0005"><ele>103</ele></trkpt>
+      <trkpt lat="45.0030" lon="7.0010"><ele>110</ele></trkpt>
+      <trkpt lat="45.0040" lon="7.0015"><ele>108</ele></trkpt>
+      <trkpt lat="45.0050" lon="7.0020"><ele>115</ele></trkpt>
+      <trkpt lat="45.0060" lon="7.0020"><ele>115</ele></trkpt>
+      <trkpt lat="45.0070" lon="7.0025"><ele>120</ele></trkpt>
+      <trkpt lat="45.0080" lon="7.0030"><ele>118</ele></trkpt>
+      <trkpt lat="45.0090" lon="7.0035"><ele>122</ele></trkpt>
+      <trkpt lat="45.0100" lon="7.0040"><ele>121</ele></trkpt>
+      <trkpt lat="45.0110" lon="7.0040"><ele>126</ele></trkpt>
+      <trkpt lat="45.0120" lon="7.0045"><ele>124</ele></trkpt>
+      <trkpt lat="45.0130" lon="7.0050"><ele>130</ele></trkpt>
+      <trkpt lat="45.0140" lon="7.0050"><ele>129</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

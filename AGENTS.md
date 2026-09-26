@@ -18,12 +18,17 @@ The repo is a **single-file script**, not the package the spec describes.
   transitively via matplotlib/contextily) — declare any new direct import here.
   Don't add `[build-system]` before the `src/` package exists; it would make
   `uv sync` try to install a project with nothing importable.
-- **Tooling is installed** (SPECS M0): ruff, ty, vulture, pytest, pytest-cov,
-  pre-commit, pip-audit are dev dependencies. `uv run ruff check .`,
-  `uv run ty check .`, `uv run vulture gpx_animate.py`, `uv run pre-commit run
-  --all-files` all pass. **There are still no tests** — `uv run pytest` exits 5
-  ("no tests collected") and both the pre-commit hook and CI tolerate that until
-  M1. No `[tool.pytest.ini_options]` yet, so there is no `testpaths` or coverage gate.
+- **Tooling and tests are installed** (SPECS M0 + M1): ruff, ty, vulture, pytest,
+  pytest-cov, pre-commit, pip-audit. `tests/` has 75 tests over the monolith at
+  100% statement *and* branch coverage, with a 90% floor enforced by
+  `[tool.coverage.report] fail_under`. Run a subset with
+  `uv run pytest tests/test_geometry.py` or `uv run pytest -k haversine`.
+- The `integration`-marked tests are **deselected by default** (`addopts` has
+  `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
+  them with `uv run pytest -m integration`; CI runs them non-blocking.
+- `pythonpath = ["."]` in `[tool.pytest.ini_options]` is what makes
+  `import gpx_animate` work. It goes away at M2, when the code is a real
+  package under `src/`.
 - `data/` holds the sample GPX **and its committed reference MP4**. The default
   output name for that GPX is that same MP4, so a run without `--out` overwrites a
   tracked file — smoke-test with `--out /tmp/...`.
@@ -50,13 +55,16 @@ Tooling (SPECS M0):
 uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check .              # type check    (becomes `src tests` at M2)
-uv run vulture gpx_animate.py --min-confidence 80
-uv run pytest -q               # exits 5 until M1 adds the first test
+uv run vulture gpx_animate.py tests --min-confidence 80
+uv run pytest -q               # 75 tests, ~5s, offline (tiles are mocked)
+uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
 
 Gate order used by CI and the Definition of Done: `ruff check` → `ruff format
---check` → `ty` → `vulture` → `pytest`.
+--check` → `ty` → `vulture` → `pytest`. The 90% coverage floor lives in
+`[tool.coverage.report] fail_under` and is applied by CI's `--cov` run, not by
+the pre-commit hook.
 
 ## Versioning & releases
 
@@ -139,9 +147,14 @@ work-in-progress edits. Same reason: any user-visible change updates
   stops being necessary fails the check. Delete stale suppressions.
 - `SPECS.md` §4.2/§4.3/§4.5 specify `src tests` paths that don't exist until M2;
   the pre-commit config and CI use the real paths with a comment saying so.
-- `pytest` currently exits 5 (no tests collected). The pre-commit hook and the CI
-  step both swallow that with `|| [ $? -eq 5 ]`; remove the tolerance in M1 when
-  real tests land.
+- `contextily.add_basemap` is monkeypatched in `test_render_frames.py` via an
+  autouse fixture, which is what keeps the default suite offline. Tiles are only
+  fetched by the `integration`-marked tests.
+- `pythonpath = ["."]` is load-bearing for `import gpx_animate`; without it every
+  test errors on import rather than failing meaningfully.
+- The coverage floor (90%) is enforced by CI's `--cov` run, not by the pre-commit
+  hook, so a local commit can dip under it. Re-check with
+  `uv run pytest -q --cov` before pushing.
 - `pip-audit` is a dev dependency but wired nowhere: it needs network access on
   every run, which would make pre-commit slow and CI flaky.
 
