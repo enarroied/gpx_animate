@@ -1,7 +1,7 @@
 [project]
-name = "gpx-stuff"
-version = "0.1.0"
-description = "Add your description here"
+name = "gpx-animate"
+version = "0.0.0"
+description = "Turn a GPX file into a short animated MP4 (and GIF) of a track."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
