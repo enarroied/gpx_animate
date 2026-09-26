@@ -18,10 +18,12 @@ The repo is a **single-file script**, not the package the spec describes.
   transitively via matplotlib/contextily) — declare any new direct import here.
   Don't add `[build-system]` before the `src/` package exists; it would make
   `uv sync` try to install a project with nothing importable.
-- **No tests, no linter, no type checker, no pre-commit, no CI.** ruff, ty,
-  vulture, and pytest exist only as spec text (SPECS §4). Don't run or cite them;
-  they will fail with "command not found". SPECS §4.7 makes bootstrapping them
-  (as a separate `chore:` commit) step one.
+- **Tooling is installed** (SPECS M0): ruff, ty, vulture, pytest, pytest-cov,
+  pre-commit, pip-audit are dev dependencies. `uv run ruff check .`,
+  `uv run ty check .`, `uv run vulture gpx_animate.py`, `uv run pre-commit run
+  --all-files` all pass. **There are still no tests** — `uv run pytest` exits 5
+  ("no tests collected") and both the pre-commit hook and CI tolerate that until
+  M1. No `[tool.pytest.ini_options]` yet, so there is no `testpaths` or coverage gate.
 - `data/` holds the sample GPX **and its committed reference MP4**. The default
   output name for that GPX is that same MP4, so a run without `--out` overwrites a
   tracked file — smoke-test with `--out /tmp/...`.
@@ -42,8 +44,19 @@ Fast smoke test (seconds instead of a full render):
 uv run gpx_animate.py trip.gpx --duration 0.2 --fps 5 --out /tmp/x.mp4
 ```
 
-No test / lint / typecheck command exists yet. Until tooling lands, the only
-verification is running the script end to end on a real GPX.
+Tooling (SPECS M0):
+
+```bash
+uv run ruff check .            # lint          (--fix to autofix)
+uv run ruff format .           # format        (--check in CI)
+uv run ty check .              # type check    (becomes `src tests` at M2)
+uv run vulture gpx_animate.py --min-confidence 80
+uv run pytest -q               # exits 5 until M1 adds the first test
+uv run pre-commit run --all-files
+```
+
+Gate order used by CI and the Definition of Done: `ruff check` → `ruff format
+--check` → `ty` → `vulture` → `pytest`.
 
 ## Versioning & releases
 
@@ -84,7 +97,15 @@ work-in-progress edits. Same reason: any user-visible change updates
 ## Gotchas in gpx_animate.py
 
 - `matplotlib.use("Agg")` must stay before `import matplotlib.pyplot`; the import
-  order at the top of the file is load-bearing.
+  order at the top of the file is load-bearing. The three `# noqa: E402` comments
+  below it exist for that reason — don't let `ruff --fix` "tidy" them away.
+- Four lint/type suppressions are deliberate debt, all removed with the file at
+  M2: `# ty: ignore[unresolved-attribute]` on the three `cx.providers.*` lines
+  (xyzservices builds those attributes at runtime, so ty can't see them),
+  `# ty: ignore[invalid-argument-type]` on `lc.set_segments` (matplotlib's stub
+  is too narrow for an ndarray), and the `N806` per-file ignore in
+  `pyproject.toml` for the geo/plot names `R`, `X`, `Y`, `W`, `H`. `ty` reports
+  an unused suppression as a warning, so they must be removed, not left stale.
 - `STYLES` is built at **import time**, and the Carto entries are silently dropped
   when `CARTO_API_KEY` is unset. Without that env var `--style` accepts only
   `osm|topo|satellite`, so README's `positron|voyager|dark` are unavailable and
@@ -104,6 +125,25 @@ work-in-progress edits. Same reason: any user-visible change updates
   encoding; there is no `--keep-frames`, so frame debugging means re-rendering.
 - Progress messages go to stdout via `print()` while ffmpeg logs to stderr, so
   piped/redirected output appears out of order (stdout is block-buffered).
+
+## Gotchas in the tooling
+
+- `ruff` 0.16 also formats Python blocks **inside Markdown**, so
+  `ruff format .` will rewrite the code examples in `SPECS.md`/`README.md`.
+  `extend-exclude = ["*.md"]` in `pyproject.toml` is deliberate — the spec is
+  hand-authored. Don't remove it, and don't "fix" spec formatting by running
+  the formatter over the docs.
+- `vulture` must be given explicit source paths (`vulture gpx_animate.py`).
+  `vulture .` walks `.venv` and reports hundreds of false positives.
+- `ty`'s `unused-ignore-comment` is a warning, not silence: a suppression that
+  stops being necessary fails the check. Delete stale suppressions.
+- `SPECS.md` §4.2/§4.3/§4.5 specify `src tests` paths that don't exist until M2;
+  the pre-commit config and CI use the real paths with a comment saying so.
+- `pytest` currently exits 5 (no tests collected). The pre-commit hook and the CI
+  step both swallow that with `|| [ $? -eq 5 ]`; remove the tolerance in M1 when
+  real tests land.
+- `pip-audit` is a dev dependency but wired nowhere: it needs network access on
+  every run, which would make pre-commit slow and CI flaky.
 
 ## Docs that disagree with the code
 

@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Type check
+        # SPECS 4.3 says `ty check src tests`; those paths arrive at M2.
+        run: uv run ty check .
+
+      - name: Dead code
+        run: uv run vulture gpx_animate.py --min-confidence 80
+
+      - name: Tests
+        # Exit 5 means "no tests collected" — the first test lands in M1
+        # (SPECS US-3). Tolerated here so the pipeline is green before then.
+        run: uv run pytest -q || [ $? -eq 5 ]
+
+      - name: Coverage upload
+        # No gate yet: the >= 85% target applies to domain/ and application/
+        # after M2. Non-blocking so a first-run upload failure is not fatal.
+        continue-on-error: true
+        run: uv run pytest -q --cov=gpx_animate --cov-report=xml || [ $? -eq 5 ]
+
+      - name: Upload coverage to Codecov
+        continue-on-error: true
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          # Public repos need no token; set CODECOV_TOKEN if this is private.
+          fail_ci_if_error: false

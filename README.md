@@ -1,5 +1,8 @@
 # gpx-animate
 
+[![ci](https://github.com/enarroied/gpx_animate/actions/workflows/ci.yml/badge.svg)](https://github.com/enarroied/gpx_animate/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/enarroied/gpx_animate/branch/master/graph/badge.svg)](https://codecov.io/gh/enarroied/gpx_animate)
+
 Turn a GPX file into a short animated MP4 for travel content (YouTube, Medium, Shorts, Reels).
 
 The animation draws the track progressively from start to finish, then holds the

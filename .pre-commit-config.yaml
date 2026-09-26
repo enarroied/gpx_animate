@@ -1,0 +1,46 @@
+# Hooks run in the repo environment (language: system), so `uv run` resolves
+# against .venv. Install once with: uv run pre-commit install
+#
+# Path notes: SPECS 4.2/4.5 say `src tests`, which do not exist until the
+# hexagonal refactor (M2). Until then the hooks target what is actually here.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff-format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: ty
+        name: ty
+        entry: uv run ty check .
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: vulture
+        name: vulture
+        entry: uv run vulture gpx_animate.py --min-confidence 80
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest
+        name: pytest
+        # Exit 5 = "no tests collected" until M1 adds the first test. The
+        # bash -c wrapper is required: `language: system` hooks are not run
+        # through a shell, so a bare `||` would be passed to pytest as arguments.
+        entry: bash -c 'uv run pytest -q || [ $? -eq 5 ]'
+        language: system
+        pass_filenames: false
+        always_run: true
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files

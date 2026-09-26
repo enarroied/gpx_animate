@@ -10,3 +10,41 @@ dependencies = [
     "matplotlib>=3.11.2",
     "pyproj>=3.7.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pip-audit>=2.10.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.9",
+    "ty>=0.0.84",
+    "vulture>=2.16",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+src = ["src"]
+# ruff 0.16 also formats Python blocks inside Markdown. SPECS.md is a
+# hand-authored design doc under active review, so keep the linter off it.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "PTH", "B", "C4", "SIM", "RET", "PL", "N"]
+# PLR0913 and PLR0917 are both argument-count rules; SPECS 4.2 only listed the
+# former. E501 (line length) stays off because `ruff format` owns line breaks.
+ignore = ["E501", "PLR0913", "PLR0917", "PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+# The monolith uses geo/plot conventions (R, X, Y, W, H) that N806 dislikes.
+# Both this file and the exemption go away at M2 (SPECS US-2).
+"gpx_animate.py" = ["N806"]
+
+[tool.ruff.lint.isort]
+force-single-line = true
+combine-as-imports = true
+lines-after-imports = 2
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

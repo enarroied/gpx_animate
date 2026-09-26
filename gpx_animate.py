@@ -19,12 +19,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import contextily as cx
 import gpxpy
 import matplotlib
 import pyproj
 import requests
+
 
 # Identify your app to OSM tile servers (required by their usage policy)
 # Change the email/URL to something that identifies you.
@@ -33,15 +35,20 @@ requests.utils.default_headers()["User-Agent"] = (
 )
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.collections import LineCollection
+# E402: these must follow matplotlib.use("Agg") or pyplot picks a GUI backend.
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+from matplotlib.collections import LineCollection  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # CONFIG — edit here, override via CLI flags
 # ---------------------------------------------------------------------------
 
-CONFIG = {
+# Mixed value types (str, float, int, None, Path), overridden per run from the
+# CLI, so `Any` is deliberate here. SPECS US-2 replaces this bag with a typed
+# RenderConfig.
+CONFIG: dict[str, Any] = {
     # --- map appearance ---
     "style": "topo",  # positron | osm | topo | dark | voyager | satellite
     "zoom_padding": 0.15,  # extra margin around the track bbox
@@ -82,9 +89,12 @@ def _carto(url_template, key_env="CARTO_API_KEY"):
 
 STYLES = {
     # Key-free providers (always work)
-    "osm": cx.providers.OpenStreetMap.Mapnik,
-    "topo": cx.providers.OpenTopoMap,
-    "satellite": cx.providers.Esri.WorldImagery,
+    # The three suppressions below are for static analysis only:
+    # xyzservices.providers is populated at runtime by Bunch, so ty cannot see
+    # the members. They come out with the file at M2 (SPECS US-2).
+    "osm": cx.providers.OpenStreetMap.Mapnik,  # ty: ignore[unresolved-attribute]
+    "topo": cx.providers.OpenTopoMap,  # ty: ignore[unresolved-attribute]
+    "satellite": cx.providers.Esri.WorldImagery,  # ty: ignore[unresolved-attribute]
     # Carto providers — require CARTO_API_KEY env var
     "positron": _carto(
         "https://basemaps.cartocdn.com/rastertiles/positron/{z}/{x}/{y}.png?key={key}"
@@ -259,9 +269,12 @@ def render_frames(cfg, lons, lats, ele, name, out_dir: Path):
         color=cfg["hud_color"],
         family=cfg["font"],
         zorder=10,
-        bbox=dict(
-            boxstyle="round,pad=0.5", facecolor="white", edgecolor="none", alpha=0.75
-        ),
+        bbox={
+            "boxstyle": "round,pad=0.5",
+            "facecolor": "white",
+            "edgecolor": "none",
+            "alpha": 0.75,
+        },
     )
 
     # title
@@ -306,15 +319,14 @@ def render_frames(cfg, lons, lats, ele, name, out_dir: Path):
     # render
     frame_paths = []
     for i in range(n_frames):
-        if i < n_draw_frames:
-            t = i / max(1, n_draw_frames - 1)
-        else:
-            t = 1.0  # hold
+        # Hold frames reuse the final state.
+        t = i / max(1, n_draw_frames - 1) if i < n_draw_frames else 1.0
 
         n_pts = max(2, int(round(t * (len(X) - 1))) + 1)
         n_pts = min(n_pts, len(X))
 
-        lc.set_segments(segs[: n_pts - 1])
+        # matplotlib's stub types set_segments too narrowly for a real ndarray.
+        lc.set_segments(segs[: n_pts - 1])  # ty: ignore[invalid-argument-type]
         marker.set_data([X[n_pts - 1]], [Y[n_pts - 1]])
 
         done_km = float(dists[n_pts - 1])
