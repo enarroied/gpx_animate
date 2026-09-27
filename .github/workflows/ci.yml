@@ -43,9 +43,11 @@ jobs:
         run: uv run pytest -q -m integration
 
       - name: Upload coverage to Codecov
-        continue-on-error: true
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
-          # Public repos need no token; set CODECOV_TOKEN if this is private.
-          fail_ci_if_error: false
+          # CodeCov rejects tokenless uploads, so the secret is needed even
+          # though this repo is public. fail_ci_if_error is deliberate: a
+          # silently-dropped upload leaves the badge stale with nothing to say so.
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
