@@ -31,11 +31,14 @@ src/gpx_animate/
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
-- `data/` holds the sample GPX **and its committed reference MP4**. A bare
-  `uv run gpx-animate data/*.gpx` writes to `./output/` (gitignored) and no longer
-  touches that MP4, but smoke tests should still pass `--out /tmp/...` so they leave
-  the repo alone. A test that exercises the *default* destination must
-  `monkeypatch.chdir(tmp_path)`, or it will create `output/` in the repo.
+- `data/` holds **one** committed GPX, as a sample input. Its rendered video was
+  removed: it was a 750 KB binary that nothing tests or reads, and eyeballing a
+  render is cheaper by running the tool. A bare `uv run gpx-animate data/*.gpx`
+  writes to `./output/` (gitignored); smoke tests should still pass
+  `--out /tmp/...` so they leave the repo alone. A test that exercises the
+  *default* destination must `monkeypatch.chdir(tmp_path)`, or it will create
+  `output/` in the repo. Note `data/.gitignore` is `*` and is itself untracked,
+  so anything else you drop there stays local — only the GPX is versioned.
 - `ffmpeg` must be on `PATH` (system dep, checked in `FfmpegEncoder.encode`).
 - Basemap tiles are downloaded at render time; renders need network access.
 
