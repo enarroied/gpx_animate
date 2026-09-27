@@ -30,6 +30,7 @@ from gpx_animate.application.use_cases.render_animation import render_animation
 from gpx_animate.application.use_cases.resolve_output import resolve_output_path
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
+from gpx_animate.config.loader import load_config
 from gpx_animate.domain.render_config import LOGO_POSITIONS
 from gpx_animate.domain.render_config import RenderConfig
 
@@ -159,7 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging(args.log_level)
 
     try:
-        config = config_from_args(args)
+        # Layers 1 to 4 of SPECS section 5; the flags are layer 5.
+        config = config_from_args(args, load_config(Path.cwd()))
         # Resolve the destination before rendering, so an unwritable path costs
         # nothing instead of a full render's worth of tiles and frames.
         config = dataclasses.replace(config, out=resolve_output_path(config, args.gpx))

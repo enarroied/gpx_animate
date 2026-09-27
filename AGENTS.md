@@ -6,8 +6,8 @@ which diverges from the spec in ways that matter.
 
 ## Current state
 
-SPECS M0–M2 are done. The code is the hexagonal package the spec describes, and
-it is installable.
+SPECS M0–M3 are done. The code is the hexagonal package the spec describes, it is
+installable, and it can be configured from files and the environment.
 
 ```
 src/gpx_animate/
@@ -15,7 +15,7 @@ src/gpx_animate/
 ├── application/    ports.py (Protocols), errors.py, use_cases/{load_track,render_animation,export_video}.py
 ├── adapters/       basemaps/{tiles,none}.py, renderers/matplotlib_renderer.py,
 │                   encoders/ffmpeg_encoder.py, logos/registry.py, cli/main.py, gui/main.py (stub)
-└── config/         defaults.py
+└── config/         defaults.py, layers.py (reading a layer), loader.py (stacking them)
 ```
 
 - `pyproject.toml` has a `[build-system]` (hatchling) and
@@ -24,7 +24,7 @@ src/gpx_animate/
   `requests` are now declared dependencies rather than arriving transitively.
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
-  implementations) and `tests/fixtures/`. 201 tests at 100% statement **and**
+  implementations) and `tests/fixtures/`. 296 tests at 100% statement **and**
   branch coverage, with a 90% floor in `[tool.coverage.report] fail_under`.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
@@ -58,7 +58,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 201 tests, ~4s, offline (tiles are faked)
+uv run pytest -q               # 296 tests, offline (tiles are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -77,7 +77,7 @@ there is no publish token to manage.
 
 | Version | Scope | Exit criteria |
 |---|---|---|
-| `0.0.0` | now: M0–M2 landed, unreleased | no tags yet |
+| `0.0.0` | now: M0–M3 landed, unreleased | no tags yet |
 | `0.1.0` | SPECS M3–M6 + US-10 GIF | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
@@ -85,7 +85,7 @@ there is no publish token to manage.
 The GUI is its own minor bump because it is a *new adapter* over a frozen
 application layer — new capability, no breaking change. M0–M2 is invisible to
 users, so it stays in `[Unreleased]` rather than burning a version number on a
-refactor.
+refactor. M3 is the first user-visible milestone: the output path moved.
 
 Cut procedure:
 
@@ -161,6 +161,23 @@ work-in-progress edits. Same reason: any user-visible change updates
   `contextily.add_basemap`. The monolith also mutated
   `requests.utils.default_headers()["User-Agent"]` at import, which never took
   effect — that call rebuilds the dict every time. There is a test pinning this.
+- **The CLI reads the developer's own environment and `~/.config`.** `main()` calls
+  `load_config(Path.cwd())`, so `tests/adapters/cli/test_cli_main.py` has an autouse
+  `hermetic_config` fixture that strips `GPX_ANIMATE_*` from `os.environ`, points
+  `layers.user_config_path` at nothing, and `chdir`s to `tmp_path`. Without it the suite's
+  results depend on the machine it runs on. A hand-written `gpx-animate.toml` in the repo
+  root would also be picked up; that filename is gitignored.
+- **Unknown config keys are errors, on purpose** — a typo like `durtaion` is reported with
+  the list of valid keys, never ignored. The set of settable keys is *derived* from the
+  dataclass fields (`config/layers.py:config_keys()` walks `dataclasses.fields`), so a new
+  domain field becomes settable in both files and the environment with no second list to
+  keep in sync. Don't hand-maintain a key list. `settable_keys()` exists because
+  `appearance` is a valid TOML *table* but not a value anyone may assign: without it
+  `GPX_ANIMATE_APPEARANCE=x` would replace the whole `Style` with a string and fail far
+  from the cause.
+- `config/loader.py` coerces by key through the `COERCERS` table; a key that is not in it
+  is passed through as a string. That is why `fps = "29.97"` is an error rather than a
+  silent truncation to 29.
 - Frames are written to a `tempfile.TemporaryDirectory()` owned by the **CLI
   adapter** and deleted after encoding; there is no `--keep-frames`, so frame
   debugging means re-rendering. Use `tests/fakes.py` to assert on frames instead.
@@ -205,10 +222,6 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS §5 config layering (toml files + `GPX_ANIMATE_*` env) is **not
-  implemented**: `config/defaults.py` only composes the frozen domain defaults.
-  Layers 2–4 land in M3 alongside the timestamped output directory, which needs
-  the same resolution logic.
 - SPECS US-5 logo registry, US-6 basemap abstraction
   (`--tiff`, `--style none` as a *CLI* option), US-7 boundary control, US-8 PyQt
   GUI, US-10 GIF export: **not implemented**. Don't write code or docs as if they

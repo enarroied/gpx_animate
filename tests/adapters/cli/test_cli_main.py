@@ -1,6 +1,7 @@
 """The CLI adapter: argument wiring, precedence, and exit codes."""
 
 import logging
+import os
 from pathlib import Path
 
 import gpxpy.gpx
@@ -10,6 +11,7 @@ from gpx_animate.adapters.basemaps.tiles import available_styles
 from gpx_animate.adapters.cli import main as cli
 from gpx_animate.application.errors import FfmpegNotFoundError
 from gpx_animate.application.ports import RenderResult
+from gpx_animate.config import layers
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.render_config import RenderConfig
@@ -49,6 +51,24 @@ class Recorder:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"fake video")
         return out
+
+
+@pytest.fixture(autouse=True)
+def hermetic_config(monkeypatch, tmp_path):
+    """Keep the developer's own configuration out of these tests.
+
+    ``main`` reads the real environment and the real ``~/.config``, so without
+    this a stray ``GPX_ANIMATE_DURATION`` or a hand-written user TOML would
+    change what the suite asserts. Every test also runs in a directory with no
+    ``gpx-animate.toml`` in it, unless it writes one.
+    """
+    for name in list(os.environ):
+        if name.startswith("GPX_ANIMATE_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setattr(
+        layers, "user_config_path", lambda: tmp_path / "no-such-user-config.toml"
+    )
+    monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture

@@ -1,14 +1,13 @@
-"""Shipped defaults, and the place the override layers will be stacked.
+"""Shipped defaults: the bottom layer of the config stack.
 
 SPECS section 5 asks for defaults in one file, never mutated, overridable by
 config files and the environment. The defaults themselves live on the domain
 types, because that is what makes them validated; this module is the single
-place that composes them and the seam the later layers attach to.
+place that composes them.
 
-Not implemented yet, and therefore not here: the user and project TOML files
-and the ``GPX_ANIMATE_*`` environment variables from layers 2 to 4. They land
-in M3 alongside the timestamped output directory, which needs the same
-resolution logic.
+The layers above it are in the same package: :mod:`gpx_animate.config.layers`
+reads one source, and :mod:`gpx_animate.config.loader` stacks them. They start
+from :func:`default_config` and never mutate it.
 """
 
 from __future__ import annotations

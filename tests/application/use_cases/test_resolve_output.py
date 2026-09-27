@@ -63,7 +63,9 @@ class TestGeneratedName:
     def test_creates_no_directories(self, tmp_path):
         """export_video owns directory creation; this only picks a name."""
         config = RenderConfig(output_dir=tmp_path / "made" / "up")
-        result = resolve_output_path(config, Path("trip.gpx"), now=STAMP)
+        assert resolve_output_path(config, Path("trip.gpx"), now=STAMP) == (
+            tmp_path / "made" / "up" / "trip__20260927-140233.mp4"
+        )
         assert not (tmp_path / "made").exists()
 
     def test_defaults_to_now_when_no_timestamp_is_given(self):

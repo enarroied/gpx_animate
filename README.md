@@ -127,32 +127,87 @@ extension, so `trip.mp4` becomes `trip__2.mp4`.
 
 ## 5. Configuration
 
-Defaults live in frozen dataclasses — `RenderConfig` and `Style` in
-`gpx_animate.domain`, composed by `gpx_animate.config.defaults` — so they are
-typed, immutable, and validated at construction.
+Settings are typed and immutable: `RenderConfig` and `Style` in
+`gpx_animate.domain`, validated at construction. Five layers stack, and each
+one only overrides the layer below it:
 
-### Key config fields
+```
+domain defaults  <  ~/.config/gpx-animate/config.toml  <  ./gpx-animate.toml
+                 <  GPX_ANIMATE_* environment  <  CLI flags
+```
 
-**Map appearance**
-- `style` — basemap preset (see `TILE_PROVIDERS`).
-- `margin` — fractional margin around the track bounding box (`--margin`).
+Overrides are applied with `dataclasses.replace`, which re-runs validation, so
+a bad value is rejected before anything renders.
 
-**Animation timing**
-- `duration` — drawing phase, seconds.
-- `hold` — hold phase, seconds.
-- `fps` — frame rate.
+### Every key
 
-**Output**
-- `size` — one of `SIZE_PRESETS` (`16:9`, `1:1`, `9:16`).
-- `dpi` — render DPI.
-- `out` — output path (`None` → generated in `output_dir`).
-- `output_dir` — where the generated name goes, default `./output`.
-- `force` — overwrite an existing `out` instead of suffixing it.
+`output_dir`, `dpi` and the `appearance.*` keys have no CLI flag; they are set in
+a config file or the environment.
 
-**Look & feel** (the `Style` dataclass)
-- `bg_color`, `track_faint`, `track_bright`, `marker_color`, `hud_color`, `title_color`
-- `font`
-- `logo`, `logo_position`
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `style` | str | `topo` | Basemap preset, see `TILE_PROVIDERS` |
+| `duration` | float | `5.0` | Drawing phase, seconds |
+| `hold` | float | `1.0` | Hold phase after the trace is finished, seconds |
+| `fps` | int | `30` | Frame rate for both phases |
+| `size` | str | `16:9` | `16:9`, `1:1` or `9:16` |
+| `margin` | float | `0.15` | Padding around the track bbox, as a fraction |
+| `out` | path | *(none)* | Output file; blank means "generate one" |
+| `output_dir` | path | `output` | Where the generated name goes |
+| `force` | bool | `false` | Overwrite `out` instead of suffixing it |
+| `logo` | path | *(none)* | PNG with transparency to brand the frames |
+| `logo_position` | str | `bottom-right` | `bottom-right`, `bottom-left`, `top-right`, `top-left` |
+| `appearance.bg_color` | str | `#f5f5f2` | Figure background |
+| `appearance.track_faint` | str | `#b8b8b8` | The whole track, before it is drawn |
+| `appearance.track_bright` | str | `#e63946` | The part drawn so far |
+| `appearance.marker_color` | str | `#1d3557` | The moving head marker |
+| `appearance.hud_color` | str | `#1d3557` | Distance/elevation readout |
+| `appearance.title_color` | str | `#1d3557` | Trip title |
+| `appearance.font` | str | `DejaVu Sans` | Font family |
+
+### The two TOML files
+
+`./gpx-animate.toml` is per-project and worth committing. The user file applies
+everywhere. Both are optional, and a missing file is not an error.
+
+```toml
+# gpx-animate.toml
+style = "osm"
+duration = 8.0
+output_dir = "renders"
+force = true
+
+[appearance]
+track_bright = "#ff5a1f"
+font = "Inter"
+```
+
+### The environment layer
+
+Any key can be set as `GPX_ANIMATE_<KEY>`, with the `appearance.` prefix
+dropped and dots becoming underscores:
+
+```bash
+GPX_ANIMATE_DURATION=8.0 gpx-animate trip.gpx
+GPX_ANIMATE_APPEARANCE_TRACK_BRIGHT="#ff5a1f" gpx-animate trip.gpx
+```
+
+Useful in CI, where a committed file you would rather not change is the
+problem. An empty value means "unset", so `GPX_ANIMATE_OUT=` reverts to the
+generated name.
+
+### Unknown keys are errors
+
+A typo is reported at startup with the list of valid keys, rather than
+silently ignored:
+
+```
+$ gpx-animate trip.gpx
+gpx-animate.toml has no setting 'durtaion'; valid keys are style, duration, hold, ...
+```
+
+The same holds for a `GPX_ANIMATE_*` variable that names nothing. The prefix is
+this tool's own, so nothing outside it should ever be there.
 
 ### Extensibility
 - **New basemap:** add one entry to `TILE_PROVIDERS` in
@@ -161,13 +216,9 @@ typed, immutable, and validated at construction.
   `gpx_animate.domain.render_config`.
 - **New CLI flag:** add to `build_parser()`; the override is applied
   automatically, there is no whitelist to update.
-
-### Precedence
-```
-domain defaults  <  CLI flags
-```
-Overrides are applied with `dataclasses.replace`, which re-runs validation, so
-an invalid flag value is rejected before any rendering happens.
+- **New config key:** add the field to `RenderConfig` or `Style`. Every layer
+  is validated against the dataclass fields, so it becomes settable in both
+  files and the environment with no further work.
 
 ---
 
