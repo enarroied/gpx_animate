@@ -18,13 +18,13 @@ repos:
         types: [python]
       - id: ty
         name: ty
-        entry: uv run ty check .
+        entry: uv run ty check src tests
         language: system
         pass_filenames: false
         always_run: true
       - id: vulture
         name: vulture
-        entry: uv run vulture gpx_animate.py tests --min-confidence 80
+        entry: uv run vulture src tests --min-confidence 80
         language: system
         pass_filenames: false
         always_run: true

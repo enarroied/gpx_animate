@@ -17,11 +17,18 @@ See AGENTS.md -> Versioning & releases.
 
 Nothing has been released yet. Current state of the project:
 
-- Single-file script (`gpx_animate.py`) run via `uv run gpx_animate.py <trip.gpx>`.
-  Not an installable package yet, so there is no `gpx-animate` console entry point.
+- Installed package (`gpx_animate`) with a `gpx-animate` console entry point:
+  `uv run gpx-animate <trip.gpx>`. The single-file script is gone; rendering output
+  is unchanged, frame for frame.
 - Renders a GPX track to an H.264 MP4: matplotlib frames piped to ffmpeg.
+- Internals are now a hexagonal package (`domain` / `application` / `adapters` /
+  `config`) with ports-and-protocols seams. This is invisible to users.
 - `--style` accepts `osm`, `topo`, and `satellite`. The Carto styles (`positron`,
   `voyager`, `dark`) are dropped at import time unless `CARTO_API_KEY` is set.
-- Branding (colors, fonts, dpi, `zoom_padding`) is `CONFIG`-only — no CLI flags yet.
+- New: `--margin` (axes margin) and `--log-level` (`debug`/`info`/`warning`/`error`);
+  library code logs through `logging` instead of `print()`.
+- New: invalid `--size`, `--logo-position`, `--fps`, `--duration`, `--hold`, `--dpi`
+  or `--margin` values are rejected up front with a message and exit code 1.
+- Branding (colors, fonts, dpi) is still `Style`/`RenderConfig`-only — no CLI flags yet.
 - Specified in `SPECS.md` but not implemented: timestamped outputs (US-4), logo
   registry (US-5), boundary flags (US-7), PyQt GUI (US-8), GIF export (US-10).

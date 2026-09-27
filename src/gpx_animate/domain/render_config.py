@@ -1,0 +1,111 @@
+"""Validated render settings, and the frame arithmetic derived from them.
+
+Every knob the pipeline reads lives here as a frozen dataclass field, so a bad
+value is rejected at construction rather than turning into a confusing failure
+halfway through a render. The frame counts are properties rather than stored
+fields, which is what keeps them consistent with the durations.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from gpx_animate.domain.style import DEFAULT_STYLE
+from gpx_animate.domain.style import Style
+
+
+SIZE_PRESETS: dict[str, tuple[float, float]] = {
+    "16:9": (12.8, 7.2),
+    "1:1": (9.0, 9.0),
+    "9:16": (7.2, 12.8),
+}
+"""Output aspect presets, as matplotlib figure sizes in inches."""
+
+LOGO_POSITIONS = ("bottom-right", "bottom-left", "top-right", "top-left")
+"""Corner anchors a logo can be pinned to."""
+
+
+@dataclass(frozen=True)
+class RenderConfig:
+    """Everything one render needs to know.
+
+    Args:
+        style: Basemap style name, resolved by a basemap provider.
+        duration: Seconds of the drawing phase.
+        hold: Seconds to hold the finished trace. May be zero.
+        fps: Frames per second for both phases.
+        size: Key into :data:`SIZE_PRESETS`.
+        dpi: Resolution of the rendered frames.
+        margin: Extra padding around the track bounding box, as a fraction.
+        out: Destination file, or ``None`` to let the caller decide.
+        logo: Optional PNG drawn in a corner.
+        logo_position: Which corner the logo sits in.
+        appearance: Colours and font.
+
+    Raises:
+        ValueError: If any value is out of range or not a known preset.
+    """
+
+    style: str = "topo"
+    duration: float = 5.0
+    hold: float = 1.0
+    fps: int = 30
+    size: str = "16:9"
+    dpi: int = 150
+    margin: float = 0.15
+    out: Path | None = None
+    logo: Path | None = None
+    logo_position: str = "bottom-right"
+    appearance: Style = DEFAULT_STYLE
+
+    def __post_init__(self) -> None:
+        if self.fps <= 0:
+            raise ValueError(f"fps must be > 0, got {self.fps}")
+        if self.duration <= 0:
+            raise ValueError(f"duration must be > 0, got {self.duration}")
+        if self.hold < 0:
+            raise ValueError(f"hold must be >= 0, got {self.hold}")
+        if self.dpi <= 0:
+            raise ValueError(f"dpi must be > 0, got {self.dpi}")
+        if self.margin < 0:
+            raise ValueError(f"margin must be >= 0, got {self.margin}")
+        if self.size not in SIZE_PRESETS:
+            raise ValueError(
+                f"size must be one of {sorted(SIZE_PRESETS)}, got {self.size!r}"
+            )
+        if self.logo_position not in LOGO_POSITIONS:
+            raise ValueError(
+                f"logo_position must be one of {list(LOGO_POSITIONS)}, "
+                f"got {self.logo_position!r}"
+            )
+
+    @property
+    def size_inches(self) -> tuple[float, float]:
+        """Figure size in inches as ``(width, height)``."""
+        return SIZE_PRESETS[self.size]
+
+    @property
+    def total_duration(self) -> float:
+        """Length of the finished video in seconds: draw plus hold."""
+        return self.duration + self.hold
+
+    @property
+    def n_draw_frames(self) -> int:
+        """Frames in the drawing phase, truncated to a whole frame.
+
+        The truncation is deliberate and lossy: ``duration=0.19`` at 5 fps is
+        zero frames, so the clip comes out shorter than asked. Rounding up
+        instead would overshoot every duration.
+        """
+        return int(self.duration * self.fps)
+
+    @property
+    def n_hold_frames(self) -> int:
+        """Frames in the hold phase, truncated the same way as the draw phase."""
+        return int(self.hold * self.fps)
+
+    @property
+    def n_frames(self) -> int:
+        """Total frames rendered: the draw phase followed by the hold phase."""
+        return self.n_draw_frames + self.n_hold_frames

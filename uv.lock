@@ -718,11 +718,13 @@ wheels = [
 [[package]]
 name = "gpx-animate"
 version = "0.0.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "contextily" },
     { name = "gpxpy" },
     { name = "matplotlib" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "pyproj", version = "3.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
@@ -743,6 +745,7 @@ requires-dist = [
     { name = "contextily", specifier = ">=1.7.1" },
     { name = "gpxpy", specifier = ">=1.6.2" },
     { name = "matplotlib", specifier = ">=3.11.2" },
+    { name = "numpy", specifier = ">=2.0.0" },
     { name = "pyproj", specifier = ">=3.7.2" },
 ]
 

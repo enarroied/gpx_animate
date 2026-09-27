@@ -8,8 +8,21 @@ dependencies = [
     "contextily>=1.7.1",
     "gpxpy>=1.6.2",
     "matplotlib>=3.11.2",
+    "numpy>=2.0.0",
     "pyproj>=3.7.2",
 ]
+
+# The project is installable as of M2: there is finally a package to install,
+# which is what makes `uvx gpx-animate` and the console script work.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+gpx-animate = "gpx_animate.adapters.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gpx_animate"]
 
 [dependency-groups]
 dev = [
@@ -37,9 +50,10 @@ select = ["E", "W", "F", "I", "UP", "PTH", "B", "C4", "SIM", "RET", "PL", "N"]
 ignore = ["E501", "PLR0913", "PLR0917", "PLR2004"]
 
 [tool.ruff.lint.per-file-ignores]
-# The monolith uses geo/plot conventions (R, X, Y, W, H) that N806 dislikes.
-# Both this file and the exemption go away at M2 (SPECS US-2).
-"gpx_animate.py" = ["N806"]
+# The matplotlib renderer follows the geo/plot conventions (X, Y for projected
+# coordinates) that N806 dislikes. The old monolith exemption is gone with the
+# monolith; this is its replacement.
+"src/gpx_animate/adapters/renderers/matplotlib_renderer.py" = ["N806"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
@@ -49,12 +63,16 @@ lines-after-imports = 2
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ty.environment]
+python-version = "3.11"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# gpx_animate.py is a top-level script, not an installed package, so the repo
-# root has to be importable. This replaces the sys.path hack SPECS US-2 removes
-# once the code lives in src/gpx_animate.
-pythonpath = ["."]
+# No pythonpath entry for the package any more: it is installed by `uv sync`
+# now that it has a [build-system], so imports resolve the normal way. The
+# tests directory itself is on the path so the shared fakes in tests/fakes.py
+# are importable from any depth without __init__.py files in the tree.
+pythonpath = ["tests"]
 # The integration tests need ffmpeg and the tile servers; opt in with
 # `pytest -m integration`. CI runs them as a non-blocking step instead.
 addopts = "-ra --strict-markers -m 'not integration'"
@@ -68,10 +86,10 @@ branch = true
 
 [tool.coverage.report]
 show_missing = true
-# SPECS US-3 targets >= 85% on domain/ and application/ after M2. The monolith
-# is a single module including the CLI, so the floor starts here and ratchets
-# up. Revisit it at M2: US-3 sets no target on adapters, so one global floor
-# stops being the right shape once the code is split.
+# SPECS US-3 asks for >= 85% on domain/ and application/ with no target on
+# adapters. Adapters are covered anyway — mocking contextily and ffmpeg is
+# cheap, and an uncovered adapter is where the bugs hide. Revisit when M4 adds
+# rasterio-backed basemaps, which may be harder to exercise.
 fail_under = 90
 exclude_lines = [
     "pragma: no cover",

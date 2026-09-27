@@ -15,7 +15,7 @@ pipeline runs from a single command.
 
 ## 1. Purpose
 
-- **Input:** one `.gpx` file (track, route, or waypoints).
+- **Input:** one `.gpx` file (tracks, or routes as a fallback).
 - **Output:** one `.mp4` file, ready to upload.
 - **Use case:** short "trip reveal" clips for travel videos and blog posts.
 - **Target user:** a solo creator who wants a repeatable, scriptable workflow —
@@ -64,6 +64,8 @@ pyproj
 ### Environment
 - Designed to run under **`uv`**.
 - Should also work with plain `pip` / `venv`.
+- Installed as a package, so the entry point is `gpx-animate` (`uv sync`, then
+  `uv run gpx-animate ...`; a released version would be `uvx gpx-animate ...`).
 
 ---
 
@@ -71,7 +73,7 @@ pyproj
 
 ### Default
 ```bash
-uv run gpx_animate.py my_trip.gpx
+uv run gpx-animate my_trip.gpx
 ```
 Produces `my_trip.mp4` next to the GPX file.
 
@@ -79,13 +81,13 @@ Produces `my_trip.mp4` next to the GPX file.
 
 ```bash
 # Outdoor / hiking look for YouTube (16:9)
-uv run gpx_animate.py my_trip.gpx --style topo --out topo.mp4
+uv run gpx-animate my_trip.gpx --style topo --out topo.mp4
 
 # Square for Medium / Instagram
-uv run gpx_animate.py my_trip.gpx --size 1:1 --out square.mp4
+uv run gpx-animate my_trip.gpx --size 1:1 --out square.mp4
 
 # Vertical for Shorts / Reels, with a watermark
-uv run gpx_animate.py my_trip.gpx --size 9:16 \
+uv run gpx-animate my_trip.gpx --size 9:16 \
     --logo brand.png --logo-position top-left
 ```
 
@@ -94,7 +96,7 @@ uv run gpx_animate.py my_trip.gpx --size 9:16 \
 | Flag | Type | Default | Notes |
 |---|---|---|---|
 | `gpx` | path (positional) | — | Input GPX file |
-| `--style` | enum | `positron` | `positron`, `voyager`, `dark`, `osm`, `topo`, `satellite` |
+| `--style` | enum | `topo` | `osm`, `topo`, `satellite`, plus `positron`/`voyager`/`dark` when `CARTO_API_KEY` is set |
 | `--duration` | float (s) | `5.0` | Length of the drawing phase |
 | `--hold` | float (s) | `1.0` | Pause on the finished trace |
 | `--fps` | int | `30` | Frame rate |
@@ -102,6 +104,8 @@ uv run gpx_animate.py my_trip.gpx --size 9:16 \
 | `--out` | path | `<gpx_stem>.mp4` | Output file |
 | `--logo` | path | `None` | PNG with transparency |
 | `--logo-position` | enum | `bottom-right` | `bottom-right`, `bottom-left`, `top-right`, `top-left` |
+| `--margin` | float | `0.08` | Fractional margin around the track bounding box |
+| `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
 
 Total clip length = `duration + hold` (default **6 s**: 5 s drawing + 1 s hold).
 
@@ -109,14 +113,15 @@ Total clip length = `duration + hold` (default **6 s**: 5 s drawing + 1 s hold).
 
 ## 5. Configuration
 
-All defaults live in a `CONFIG` dict at the top of the script, so the file can be
-read, edited, and versioned as a single source of truth.
+Defaults live in frozen dataclasses — `RenderConfig` and `Style` in
+`gpx_animate.domain`, composed by `gpx_animate.config.defaults` — so they are
+typed, immutable, and validated at construction.
 
 ### Key config fields
 
 **Map appearance**
 - `style` — basemap preset (see `STYLES` dict).
-- `zoom_padding` — fractional margin around the track bounding box.
+- `margin` — fractional margin around the track bounding box (`--margin`).
 
 **Animation timing**
 - `duration` — drawing phase, seconds.
@@ -134,15 +139,19 @@ read, edited, and versioned as a single source of truth.
 - `logo`, `logo_position`
 
 ### Extensibility
-- **New basemap:** add one entry to `STYLES`.
-- **New aspect ratio:** add one entry to `SIZES`.
-- **New CLI flag:** add to `parse_args()`, then whitelist it in `main()`.
+- **New basemap:** add one entry to `TILE_PROVIDERS` in
+  `gpx_animate.adapters.basemaps.tiles`.
+- **New aspect ratio:** add one entry to `SIZE_PRESETS` in
+  `gpx_animate.domain.render_config`.
+- **New CLI flag:** add to `build_parser()`; the override is applied
+  automatically, there is no whitelist to update.
 
 ### Precedence
 ```
-CONFIG defaults  <  CLI flags
+domain defaults  <  CLI flags
 ```
-`CONFIG` is never mutated in place; a copy is made per run.
+Overrides are applied with `dataclasses.replace`, which re-runs validation, so
+an invalid flag value is rejected before any rendering happens.
 
 ---
 
@@ -174,9 +183,10 @@ CONFIG defaults  <  CLI flags
    Keeps the workspace clean on re-runs. A `--keep-frames` flag can be added
    trivially if debugging requires it.
 
-7. **Config dict + CLI override.**
+7. **Frozen config dataclasses + CLI override.**
    Branding changes shouldn't require touching logic. A creator changes colors
-   once, and every future trip inherits them.
+   once, and every future trip inherits them. Immutability plus `__post_init__`
+   validation means a bad value fails immediately instead of mid-render.
 
 ---
 
@@ -190,7 +200,9 @@ CONFIG defaults  <  CLI flags
 - **No batch mode.** One GPX per invocation (a shell loop works fine).
 - **Projection is hard-coded to Web Mercator.** Fine for contextily tiles; would
   need changing for other tile sources.
-- **Single track only.** Only the first track/segment is used.
+- **One polyline per file.** Every track and every segment in the GPX is
+  concatenated into a single line, so a multi-segment file is not animated as
+  separate legs. Waypoints are not read at all.
 
 ---
 
@@ -200,7 +212,7 @@ CONFIG defaults  <  CLI flags
 2. Animated elevation profile subplot.
 3. Speed-gradient coloring along the track.
 4. Intro/outro fade via ffmpeg filters.
-5. Batch mode: `gpx_animate.py trips/*.gpx`.
+5. Batch mode: `for g in trips/*.gpx; do gpx-animate "$g"; done`.
 6. Optional background music muxing.
 7. `--keep-frames` debug flag.
 8. Preset "brands" (e.g. `--brand hiking`, `--brand city`) as named configs.
@@ -211,8 +223,8 @@ CONFIG defaults  <  CLI flags
 
 For a reviewer (human or AI) checking this spec against the implementation:
 
-- [ ] `CONFIG` at top of file contains all documented keys.
-- [ ] Every key in `CONFIG` can be overridden by the corresponding CLI flag
+- [ ] `RenderConfig`/`Style` defaults contain all documented keys.
+- [ ] Every config key can be overridden by the corresponding CLI flag
       listed in §4 (where a flag exists).
 - [ ] `STYLES` contains exactly: `positron`, `voyager`, `dark`, `osm`, `topo`, `satellite`.
 - [ ] `SIZES` contains exactly: `16:9`, `1:1`, `9:16`.

@@ -6,57 +6,57 @@ which diverges from the spec in ways that matter.
 
 ## Current state
 
-The repo is a **single-file script**, not the package the spec describes.
+SPECS M0–M2 are done. The code is the hexagonal package the spec describes, and
+it is installable.
 
-- `gpx_animate.py` (~430 lines) is the whole program: `CONFIG`, `STYLES`, `SIZES`,
-  GPX parsing, geometry, matplotlib frame rendering, ffmpeg encode, argparse CLI.
-  There is no `src/`, no package, no console entry points.
-- `pyproject.toml`: no `[tool.ruff]`, no dev deps, no `[build-system]` — the
-  project is *virtual* (`uv.lock` marks it `source = { virtual = "." }`), so
-  `uv sync` does not install it and there is no `gpx-animate` entry point. The
-  script imports `numpy` and `requests` without declaring them (they arrive
-  transitively via matplotlib/contextily) — declare any new direct import here.
-  Don't add `[build-system]` before the `src/` package exists; it would make
-  `uv sync` try to install a project with nothing importable.
-- **Tooling and tests are installed** (SPECS M0 + M1): ruff, ty, vulture, pytest,
-  pytest-cov, pre-commit, pip-audit. `tests/` has 75 tests over the monolith at
-  100% statement *and* branch coverage, with a 90% floor enforced by
-  `[tool.coverage.report] fail_under`. Run a subset with
-  `uv run pytest tests/test_geometry.py` or `uv run pytest -k haversine`.
+```
+src/gpx_animate/
+├── domain/         track.py (Point, Track, haversine), style.py, render_config.py
+├── application/    ports.py (Protocols), errors.py, use_cases/{load_track,render_animation,export_video}.py
+├── adapters/       basemaps/{tiles,none}.py, renderers/matplotlib_renderer.py,
+│                   encoders/ffmpeg_encoder.py, logos/registry.py, cli/main.py, gui/main.py (stub)
+└── config/         defaults.py
+```
+
+- `pyproject.toml` has a `[build-system]` (hatchling) and
+  `[project.scripts] gpx-animate`, so `uv sync` installs the project and
+  `uv run gpx-animate` / `uvx --from . gpx-animate` both work. `numpy` and
+  `requests` are now declared dependencies rather than arriving transitively.
+- `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
+  `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
+  implementations) and `tests/fixtures/`. 201 tests at 100% statement **and**
+  branch coverage, with a 90% floor in `[tool.coverage.report] fail_under`.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
-- `pythonpath = ["."]` in `[tool.pytest.ini_options]` is what makes
-  `import gpx_animate` work. It goes away at M2, when the code is a real
-  package under `src/`.
 - `data/` holds the sample GPX **and its committed reference MP4**. The default
   output name for that GPX is that same MP4, so a run without `--out` overwrites a
   tracked file — smoke-test with `--out /tmp/...`.
-- `ffmpeg` must be on `PATH` (system dep, checked in `frames_to_video`).
+- `ffmpeg` must be on `PATH` (system dep, checked in `FfmpegEncoder.encode`).
 - Basemap tiles are downloaded at render time; renders need network access.
 
 ## Commands
 
 ```bash
-uv sync                                          # install deps
-uv run gpx_animate.py trip.gpx                   # -> trip.mp4 next to the GPX
-uv run gpx_animate.py trip.gpx --style osm --size 9:16 --out /tmp/x.mp4
+uv sync                                   # install deps + the project
+uv run gpx-animate trip.gpx               # -> trip.mp4 next to the GPX
+uv run gpx-animate trip.gpx --style osm --size 9:16 --out /tmp/x.mp4
 ```
 
 Fast smoke test (seconds instead of a full render):
 
 ```bash
-uv run gpx_animate.py trip.gpx --duration 0.2 --fps 5 --out /tmp/x.mp4
+uv run gpx-animate trip.gpx --duration 0.2 --fps 5 --out /tmp/x.mp4
 ```
 
-Tooling (SPECS M0):
+Tooling (SPECS M0/M1, paths updated for M2):
 
 ```bash
 uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
-uv run ty check .              # type check    (becomes `src tests` at M2)
-uv run vulture gpx_animate.py tests --min-confidence 80
-uv run pytest -q               # 75 tests, ~5s, offline (tiles are mocked)
+uv run ty check src tests      # type check
+uv run vulture src tests --min-confidence 80
+uv run pytest -q               # 201 tests, ~4s, offline (tiles are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -71,18 +71,17 @@ the pre-commit hook.
 `pyproject.toml`'s `version` is the single source of truth. Bump it with
 `uv version --bump minor|patch` — it edits the manifest and re-locks, so no
 `bump2version`/`bump-my-version` needed. **GitHub Releases only, no PyPI**, so
-there is no publish token to manage and no need for a `[build-system]` before
-the `src/` package lands.
+there is no publish token to manage.
 
 | Version | Scope | Exit criteria |
 |---|---|---|
-| `0.0.0` | now: unreleased single-file script | no tags yet |
-| `0.1.0` | SPECS M0–M6 + US-10 GIF, packaged CLI | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
+| `0.0.0` | now: M0–M2 landed, unreleased | no tags yet |
+| `0.1.0` | SPECS M3–M6 + US-10 GIF | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
 
 The GUI is its own minor bump because it is a *new adapter* over a frozen
-application layer — new capability, no breaking change. M0–M6 is invisible to
+application layer — new capability, no breaking change. M0–M2 is invisible to
 users, so it stays in `[Unreleased]` rather than burning a version number on a
 refactor.
 
@@ -102,37 +101,62 @@ Stage the release files explicitly — `git commit -a` will sweep in unrelated
 work-in-progress edits. Same reason: any user-visible change updates
 `CHANGELOG.md` in the same commit.
 
-## Gotchas in gpx_animate.py
+## Gotchas in the package
 
-- `matplotlib.use("Agg")` must stay before `import matplotlib.pyplot`; the import
-  order at the top of the file is load-bearing. The three `# noqa: E402` comments
-  below it exist for that reason — don't let `ruff --fix` "tidy" them away.
-- Four lint/type suppressions are deliberate debt, all removed with the file at
-  M2: `# ty: ignore[unresolved-attribute]` on the three `cx.providers.*` lines
-  (xyzservices builds those attributes at runtime, so ty can't see them),
-  `# ty: ignore[invalid-argument-type]` on `lc.set_segments` (matplotlib's stub
-  is too narrow for an ndarray), and the `N806` per-file ignore in
-  `pyproject.toml` for the geo/plot names `R`, `X`, `Y`, `W`, `H`. `ty` reports
-  an unused suppression as a warning, so they must be removed, not left stale.
-- `STYLES` is built at **import time**, and the Carto entries are silently dropped
-  when `CARTO_API_KEY` is unset. Without that env var `--style` accepts only
-  `osm|topo|satellite`, so README's `positron|voyager|dark` are unavailable and
-  any `STYLES` change can't be verified locally without a key.
-- `CONFIG["style"]` is `topo`; README §4 claims the default is `positron`. Trust
-  the code.
-- `CONFIG` is copied per run (`cfg = dict(CONFIG)`) and never mutated — keep it
-  that way; precedence is `CONFIG` < CLI flags.
-- A new CLI flag does nothing until its dest name is added to the whitelist tuple
-  in `main()` (gpx_animate.py:390). `bg_color`, track/marker/HUD/title colors,
-  `font`, `dpi`, and `zoom_padding` are CONFIG-only — no flags exist for them.
-- Frame count is `int(duration*fps) + int(hold*fps)`; the truncation means the clip
-  can come out shorter than `duration + hold`. Hold frames just reuse `t=1.0`.
-- `requests.utils.default_headers()["User-Agent"]` is mutated at import to satisfy
-  the OSM tile servers' usage policy. Don't drop it or tile fetches get blocked.
-- Frames are written to a `tempfile.TemporaryDirectory()` and deleted after
-  encoding; there is no `--keep-frames`, so frame debugging means re-rendering.
-- Progress messages go to stdout via `print()` while ffmpeg logs to stderr, so
-  piped/redirected output appears out of order (stdout is block-buffered).
+- **`domain/` must stay pure.** No matplotlib, contextily, requests, PyQt, gpxpy
+  or ffmpeg imports. `numpy` is fine (arithmetic, not I/O); `gpxpy` is not, which
+  is why `load_track` lives in the *application* layer. The
+  `tests/application/test_ports.py` conformance tests and the port annotations
+  both enforce this — `BasemapProvider.add_basemap(axes: Any)` is `Any` on
+  purpose so the port never names a matplotlib type.
+- `matplotlib.use("Agg")` must stay before `import matplotlib.pyplot` inside
+  `adapters/renderers/matplotlib_renderer.py`; the two `# noqa: E402` comments
+  exist for that reason. The same pattern is load-bearing in
+  `tests/adapters/basemaps/test_none.py`.
+- Two deliberate `ty` suppressions remain, both on runtime-built or over-narrow
+  stubs: `# ty: ignore[unresolved-attribute]` on the three `cx.providers.*` lines
+  in `adapters/basemaps/tiles.py` (xyzservices builds those attributes at
+  runtime) and one `# ty: ignore[invalid-argument-type]` on `set_segments`
+  (matplotlib's stub is too narrow for an ndarray). `ty` reports an unused
+  suppression as a *warning that fails the check*, so delete them, never leave
+  them stale. `N806` is exempted per-file for the renderer only (projected `X`/`Y`).
+- The Carto styles (`positron`, `voyager`, `dark`) are built at **import time** in
+  `adapters/basemaps/tiles.py` and dropped when `CARTO_API_KEY` is unset, so
+  `--style` offers only `osm|topo|satellite` without that env var. README's
+  `positron|voyager|dark` are unavailable locally, and `TILE_PROVIDERS` changes
+  cannot be verified without a key.
+- The basemap style default is `topo` (`config/defaults.py`); README §4 claims
+  `positron`. Trust the code.
+- **No flag whitelist any more.** The old `for k in (...)` tuple in `main()` that
+  silently dropped unlisted flags is gone: `config_from_args` derives overrides
+  from the argparse dests, so a new flag in `build_parser` is wired by
+  construction. `dpi` and the `Style` fields (`bg_color`, `track_*`, `marker_*`,
+  `hud_color`, `title_color`, `font`) still have no flags.
+- `CONFIG` as a mutable dict is gone. Defaults are frozen dataclass fields
+  (`RenderConfig`, `Style`) composed by `config/defaults.default_config()`, and
+  overrides go through `dataclasses.replace`, which re-runs `__post_init__`
+  validation. Precedence is still defaults < CLI flags.
+- `RenderConfig` rejects `fps <= 0`, `duration <= 0`, `hold < 0`, `dpi <= 0`,
+  `margin < 0`, unknown `size` and unknown `logo_position` at construction, so
+  the CLI turns those into exit code 1 instead of a confusing render failure.
+- Frame count is `int(duration*fps) + int(hold*fps)` and the truncation is
+  intentional: a sub-frame phase disappears and the clip can come out shorter
+  than `duration + hold`. Hold frames reuse the final state, so they are
+  pixel-identical to the last draw frame.
+- The User-Agent is passed **explicitly** as `headers={"User-Agent": ...}` to
+  `contextily.add_basemap`. The monolith also mutated
+  `requests.utils.default_headers()["User-Agent"]` at import, which never took
+  effect — that call rebuilds the dict every time. There is a test pinning this.
+- Frames are written to a `tempfile.TemporaryDirectory()` owned by the **CLI
+  adapter** and deleted after encoding; there is no `--keep-frames`, so frame
+  debugging means re-rendering. Use `tests/fakes.py` to assert on frames instead.
+- Logging replaced `print()`: library code uses `logging.getLogger(__name__)` and
+  the CLI configures the root logger to stdout via `configure_logging`, so
+  ffmpeg's stderr no longer interleaves with the app's output.
+- Malformed GPX still raises `gpxpy.gpx.GPXXMLSyntaxException` with a traceback —
+  the use case does not wrap it, so behaviour is unchanged. Deliberate failures
+  (`NoPointsError`, `FfmpegNotFoundError`) subclass both `GpxAnimateError` and a
+  builtin, and the CLI turns those into a message plus exit code 1.
 
 ## Gotchas in the tooling
 
@@ -141,17 +165,20 @@ work-in-progress edits. Same reason: any user-visible change updates
   `extend-exclude = ["*.md"]` in `pyproject.toml` is deliberate — the spec is
   hand-authored. Don't remove it, and don't "fix" spec formatting by running
   the formatter over the docs.
-- `vulture` must be given explicit source paths (`vulture gpx_animate.py`).
+- `vulture` must be given explicit source paths (`vulture src tests`).
   `vulture .` walks `.venv` and reports hundreds of false positives.
 - `ty`'s `unused-ignore-comment` is a warning, not silence: a suppression that
   stops being necessary fails the check. Delete stale suppressions.
-- `SPECS.md` §4.2/§4.3/§4.5 specify `src tests` paths that don't exist until M2;
-  the pre-commit config and CI use the real paths with a comment saying so.
-- `contextily.add_basemap` is monkeypatched in `test_render_frames.py` via an
-  autouse fixture, which is what keeps the default suite offline. Tiles are only
-  fetched by the `integration`-marked tests.
-- `pythonpath = ["."]` is load-bearing for `import gpx_animate`; without it every
-  test errors on import rather than failing meaningfully.
+- `pythonpath = ["tests"]` in `[tool.pytest.ini_options]` is only there so
+  `from fakes import FakeRenderer` works at any depth without `__init__.py` files
+  in the test tree. The package itself is installed by `uv sync`, so there is no
+  `pythonpath = ["."]` any more — and a stray top-level `gpx_animate.py` would
+  shadow the installed package, which is why the monolith had to be deleted.
+- Rendering tests must use a fake basemap (`tests/fakes.py: FakeBasemap`) or
+  `BlankBasemap`; a real one makes the suite download tiles. The
+  `integration`-marked tests are the only ones that hit the network.
+- Watch out for the default `hold=1.0` when a test asserts a frame count: at
+  5 fps that silently adds 5 frames. Pass `hold=0.0` in inline `RenderConfig`s.
 - The coverage floor (90%) is enforced by CI's `--cov` run, not by the pre-commit
   hook, so a local commit can dip under it. Re-check with
   `uv run pytest -q --cov` before pushing.
@@ -164,16 +191,24 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS §3 package layout, §5 config layering (toml files + `GPX_ANIMATE_*` env),
-  US-4 timestamped outputs, US-5 logo registry, US-8 PyQt GUI, US-10 GIF export:
-  **not implemented**. Don't write code or docs as if they exist.
+- SPECS §5 config layering (toml files + `GPX_ANIMATE_*` env) is **not
+  implemented**: `config/defaults.py` only composes the frozen domain defaults.
+  Layers 2–4 land in M3 alongside the timestamped output directory, which needs
+  the same resolution logic.
+- SPECS US-4 timestamped outputs, US-5 logo registry, US-6 basemap abstraction
+  (`--tiff`, `--style none` as a *CLI* option), US-7 boundary control, US-8 PyQt
+  GUI, US-10 GIF export: **not implemented**. Don't write code or docs as if they
+  exist. `BlankBasemap` exists as a port implementation and test aid, not as the
+  `--style none` feature.
 
 ## Conventions (SPECS §6 — binding)
 
 - Any new function comes with tests. No exceptions.
 - Domain code may not import matplotlib, contextily, requests, PyQt, or ffmpeg;
   application layer talks to adapters only through `application/ports.py` protocols.
-- Google-style docstrings on public functions; no magic numbers outside `config/`.
+- Google-style docstrings on public functions; no magic numbers outside
+  `config/` and the domain's named constants (`SIZE_PRESETS`, `LOGO_POSITIONS`,
+  `EARTH_RADIUS_KM`).
 - Logging in library code; a logger adapter for the CLI.
 - Keep commit prefixes separated: `chore:` / `test:` / `refactor:` / `feat:`.
   Never mix `refactor` and `feat` in one commit.
