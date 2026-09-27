@@ -203,6 +203,12 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Renders land here by default (SPECS US-4)
+/output/
+
+# Config written for a real project (SPECS section 5)
+/gpx-animate.toml
+
 # Ruff stuff:
 .ruff_cache/
 

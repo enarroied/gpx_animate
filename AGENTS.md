@@ -29,9 +29,11 @@ src/gpx_animate/
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
-- `data/` holds the sample GPX **and its committed reference MP4**. The default
-  output name for that GPX is that same MP4, so a run without `--out` overwrites a
-  tracked file — smoke-test with `--out /tmp/...`.
+- `data/` holds the sample GPX **and its committed reference MP4**. A bare
+  `uv run gpx-animate data/*.gpx` writes to `./output/` (gitignored) and no longer
+  touches that MP4, but smoke tests should still pass `--out /tmp/...` so they leave
+  the repo alone. A test that exercises the *default* destination must
+  `monkeypatch.chdir(tmp_path)`, or it will create `output/` in the repo.
 - `ffmpeg` must be on `PATH` (system dep, checked in `FfmpegEncoder.encode`).
 - Basemap tiles are downloaded at render time; renders need network access.
 
@@ -136,6 +138,18 @@ work-in-progress edits. Same reason: any user-visible change updates
   (`RenderConfig`, `Style`) composed by `config/defaults.default_config()`, and
   overrides go through `dataclasses.replace`, which re-runs `__post_init__`
   validation. Precedence is still defaults < CLI flags.
+- **Output resolution lives in `application/use_cases/resolve_output.py`**, not in the
+  CLI, and it is deliberately side-effect free: it picks a name, it does not create the
+  directory. `export_video` does the `mkdir(parents=True)`. This means an unwritable
+  destination fails before the render, not after 150 frames. The CLI calls the resolver
+  and then `dataclasses.replace(config, out=...)`, so `export_video` is unchanged.
+- `config_from_args(args, base)` takes the layered config as `base` and only applies
+  flags on top. It does **not** invent a destination any more. Do not move the
+  `out` defaulting back into it.
+- `--force` uses `action="store_true", default=None`. A plain `store_true` would default
+  to `False`, and since `config_from_args` treats "not `None`" as "the user said so", a
+  `force = true` in a config file could never win. Same trap applies to any future
+  on/off flag.
 - `RenderConfig` rejects `fps <= 0`, `duration <= 0`, `hold < 0`, `dpi <= 0`,
   `margin < 0`, unknown `size` and unknown `logo_position` at construction, so
   the CLI turns those into exit code 1 instead of a confusing render failure.
@@ -195,7 +209,7 @@ work-in-progress edits. Same reason: any user-visible change updates
   implemented**: `config/defaults.py` only composes the frozen domain defaults.
   Layers 2–4 land in M3 alongside the timestamped output directory, which needs
   the same resolution logic.
-- SPECS US-4 timestamped outputs, US-5 logo registry, US-6 basemap abstraction
+- SPECS US-5 logo registry, US-6 basemap abstraction
   (`--tiff`, `--style none` as a *CLI* option), US-7 boundary control, US-8 PyQt
   GUI, US-10 GIF export: **not implemented**. Don't write code or docs as if they
   exist. `BlankBasemap` exists as a port implementation and test aid, not as the

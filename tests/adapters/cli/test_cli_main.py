@@ -45,7 +45,10 @@ class Recorder:
     def export(self, config, frames, encoder):
         """Stand in for export_video(config, frames, encoder)."""
         self.encoded.append((frames.frame_dir, config.fps, config.out))
-        Path(config.out).write_bytes(b"fake video")
+        out = Path(config.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"fake video")
+        return out
 
 
 @pytest.fixture
@@ -87,12 +90,35 @@ class TestSuccess:
         frame_dir = recorder.encoded[0][0]
         assert not frame_dir.exists()
 
-    def test_output_defaults_next_to_the_gpx(self, recorder, short_track_gpx, tmp_path):
-        """The default is <gpx_stem>.mp4 beside the input, not in a temp dir."""
+    def test_output_defaults_to_a_timestamped_name_in_output_dir(
+        self, recorder, short_track_gpx, tmp_path, monkeypatch
+    ):
+        """SPECS US-4: ./output/<stem>__<YYYYMMDD-HHMMSS>.mp4, created on demand.
+
+        The run happens in a temporary cwd so the test cannot leave an
+        ``output/`` directory in the repository.
+        """
+        monkeypatch.chdir(tmp_path)
         gpx = tmp_path / "my_ride.gpx"
         gpx.write_bytes(short_track_gpx.read_bytes())
         run(str(gpx))
-        assert recorder.encoded[0][2] == tmp_path / "my_ride.mp4"
+        out = recorder.encoded[0][2]
+        assert out.parent == Path("output")
+        assert out.stem.startswith("my_ride__")
+        assert out.suffix == ".mp4"
+        assert out.exists()
+
+    def test_a_second_run_does_not_overwrite_the_first(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        """Two runs in the same second must still produce two files."""
+        out = tmp_path / "same.mp4"
+        assert run(str(short_track_gpx), "--out", str(out)) == 0
+        assert run(str(short_track_gpx), "--out", str(out)) == 0
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "same.mp4",
+            "same__2.mp4",
+        ]
 
     def test_frames_are_encoded_at_the_chosen_rate(
         self, recorder, short_track_gpx, tmp_path
@@ -105,7 +131,6 @@ class TestDefaults:
     def test_uses_the_shipped_config_when_no_flags_are_given(
         self, recorder, short_track_gpx, tmp_path
     ):
-
         run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"))
         config = recorder.configs[0]
         assert config.style == default_config().style
@@ -173,20 +198,19 @@ class TestParser:
             "size",
             "margin",
             "out",
+            "force",
             "logo",
             "logo_position",
             "log_level",
         }
 
     def test_style_choices_come_from_the_providers(self):
-
         parser = cli.build_parser()
         style_action = next(a for a in parser._actions if a.dest == "style")
         assert style_action.choices is not None
         assert tuple(style_action.choices) == available_styles()
 
     def test_size_choices_come_from_the_presets(self):
-
         parser = cli.build_parser()
         size_action = next(a for a in parser._actions if a.dest == "size")
         assert size_action.choices is not None
@@ -199,7 +223,16 @@ class TestParser:
         args = cli.build_parser().parse_args([str(short_track_gpx)])
         assert all(
             getattr(args, field) is None
-            for field in ("style", "duration", "hold", "fps", "size", "margin", "out")
+            for field in (
+                "style",
+                "duration",
+                "hold",
+                "fps",
+                "size",
+                "margin",
+                "out",
+                "force",
+            )
         )
 
 
@@ -240,12 +273,27 @@ class TestConfigFromArgs:
         args = cli.build_parser().parse_args([str(short_track_gpx)])
         assert isinstance(cli.config_from_args(args), RenderConfig)
 
-    def test_fills_in_the_default_output(self, short_track_gpx):
+    def test_leaves_the_destination_to_the_resolver(self, short_track_gpx):
+        """config_from_args must not guess a name; resolve_output_path owns that."""
         args = cli.build_parser().parse_args([str(short_track_gpx)])
-        assert cli.config_from_args(args).out == short_track_gpx.with_suffix(".mp4")
+        assert cli.config_from_args(args).out is None
+
+    def test_force_is_applied(self, short_track_gpx):
+        args = cli.build_parser().parse_args([str(short_track_gpx), "--force"])
+        assert cli.config_from_args(args).force is True
+
+    def test_force_keeps_the_layer_below_when_the_flag_is_absent(self, short_track_gpx):
+        """store_true has to default to None, or a config file could not win."""
+        args = cli.build_parser().parse_args([str(short_track_gpx)])
+        base = RenderConfig(force=True)
+        assert cli.config_from_args(args, base).force is True
+
+    def test_a_provided_base_is_used_instead_of_the_defaults(self, short_track_gpx):
+        args = cli.build_parser().parse_args([str(short_track_gpx)])
+        base = RenderConfig(style="osm", duration=9.0)
+        assert cli.config_from_args(args, base) == base
 
     def test_does_not_mutate_the_defaults(self, short_track_gpx, tmp_path):
-
         cli.config_from_args(
             cli.build_parser().parse_args(
                 [str(short_track_gpx), "--fps", "7", "--out", str(tmp_path / "v.mp4")]
@@ -256,7 +304,6 @@ class TestConfigFromArgs:
 
 class TestLogging:
     def test_configures_the_root_logger(self, recorder, short_track_gpx, tmp_path):
-
         run(
             str(short_track_gpx),
             "--log-level",

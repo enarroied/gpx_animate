@@ -25,6 +25,9 @@ SIZE_PRESETS: dict[str, tuple[float, float]] = {
 LOGO_POSITIONS = ("bottom-right", "bottom-left", "top-right", "top-left")
 """Corner anchors a logo can be pinned to."""
 
+DEFAULT_OUTPUT_DIR = Path("output")
+"""Where renders land when ``--out`` is not given, relative to the cwd."""
+
 
 @dataclass(frozen=True)
 class RenderConfig:
@@ -38,7 +41,9 @@ class RenderConfig:
         size: Key into :data:`SIZE_PRESETS`.
         dpi: Resolution of the rendered frames.
         margin: Extra padding around the track bounding box, as a fraction.
-        out: Destination file, or ``None`` to let the caller decide.
+        out: Destination file, or ``None`` to let the output resolver decide.
+        output_dir: Directory for the generated name when ``out`` is ``None``.
+        force: Overwrite an existing ``out`` instead of suffixing it.
         logo: Optional PNG drawn in a corner.
         logo_position: Which corner the logo sits in.
         appearance: Colours and font.
@@ -55,6 +60,8 @@ class RenderConfig:
     dpi: int = 150
     margin: float = 0.15
     out: Path | None = None
+    output_dir: Path = DEFAULT_OUTPUT_DIR
+    force: bool = False
     logo: Path | None = None
     logo_position: str = "bottom-right"
     appearance: Style = DEFAULT_STYLE

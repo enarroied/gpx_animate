@@ -29,6 +29,11 @@ Nothing has been released yet. Current state of the project:
   library code logs through `logging` instead of `print()`.
 - New: invalid `--size`, `--logo-position`, `--fps`, `--duration`, `--hold`, `--dpi`
   or `--margin` values are rejected up front with a message and exit code 1.
+- **Behaviour change:** output now defaults to
+  `./output/<gpx_stem>__<YYYYMMDD-HHMMSS>.mp4`, created on demand, instead of overwriting
+  `<gpx_stem>.mp4` next to the GPX. An explicit `--out` is still honoured but is suffixed
+  `__2`, `__3`, … when it already exists, so a render can no longer destroy an earlier
+  one. New `--force` restores the overwrite.
 - Branding (colors, fonts, dpi) is still `Style`/`RenderConfig`-only — no CLI flags yet.
-- Specified in `SPECS.md` but not implemented: timestamped outputs (US-4), logo
-  registry (US-5), boundary flags (US-7), PyQt GUI (US-8), GIF export (US-10).
+- Specified in `SPECS.md` but not implemented: logo registry (US-5), boundary flags
+  (US-7), PyQt GUI (US-8), GIF export (US-10).

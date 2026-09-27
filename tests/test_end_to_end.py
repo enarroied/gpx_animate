@@ -66,6 +66,23 @@ def test_every_basemap_style_renders(short_track_gpx, tmp_path):
 
 
 @pytest.mark.integration
+def test_the_default_output_dir_is_created(short_track_gpx, tmp_path, monkeypatch):
+    """SPECS US-4 end to end: no --out means ./output/, created on demand."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not on PATH")
+
+    monkeypatch.chdir(tmp_path)
+    assert (
+        main([str(short_track_gpx), "--fps", "5", "--size", "1:1", "--duration", "0.2"])
+        == 0
+    )
+    written = list((tmp_path / "output").iterdir())
+    assert len(written) == 1
+    assert written[0].name.startswith("short_track__")
+    assert is_mp4(written[0])
+
+
+@pytest.mark.integration
 def test_a_logo_is_baked_into_the_video(short_track_gpx, tmp_path, logo_png):
     if shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg is not on PATH")

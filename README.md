@@ -101,13 +101,27 @@ uv run gpx-animate my_trip.gpx --size 9:16 \
 | `--hold` | float (s) | `1.0` | Pause on the finished trace |
 | `--fps` | int | `30` | Frame rate |
 | `--size` | enum | `16:9` | `16:9`, `1:1`, `9:16` |
-| `--out` | path | `<gpx_stem>.mp4` | Output file |
+| `--out` | path | — | Output file; suffixed if it exists unless `--force` |
+| `--force` | flag | off | Overwrite `--out` instead of suffixing it |
 | `--logo` | path | `None` | PNG with transparency |
 | `--logo-position` | enum | `bottom-right` | `bottom-right`, `bottom-left`, `top-right`, `top-left` |
-| `--margin` | float | `0.08` | Fractional margin around the track bounding box |
+| `--margin` | float | `0.15` | Fractional margin around the track bounding box |
 | `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
 
 Total clip length = `duration + hold` (default **6 s**: 5 s drawing + 1 s hold).
+
+### Where the video goes
+
+Without `--out`, the name is generated so no two runs can collide:
+
+```
+./output/<gpx_stem>__<YYYYMMDD-HHMMSS>.mp4     e.g. output/trip__20260927-140233.mp4
+```
+
+`./output/` is created if missing. An explicit `--out` is honoured, but if that
+file already exists it becomes `--out__2`, `--out__3`, … instead of being
+replaced; `--force` restores the overwrite. The suffix is inserted before the
+extension, so `trip.mp4` becomes `trip__2.mp4`.
 
 ---
 
@@ -120,7 +134,7 @@ typed, immutable, and validated at construction.
 ### Key config fields
 
 **Map appearance**
-- `style` — basemap preset (see `STYLES` dict).
+- `style` — basemap preset (see `TILE_PROVIDERS`).
 - `margin` — fractional margin around the track bounding box (`--margin`).
 
 **Animation timing**
@@ -129,11 +143,13 @@ typed, immutable, and validated at construction.
 - `fps` — frame rate.
 
 **Output**
-- `size` — one of `SIZES` (`16:9`, `1:1`, `9:16`).
+- `size` — one of `SIZE_PRESETS` (`16:9`, `1:1`, `9:16`).
 - `dpi` — render DPI.
-- `out` — output path (`None` → derived from GPX filename).
+- `out` — output path (`None` → generated in `output_dir`).
+- `output_dir` — where the generated name goes, default `./output`.
+- `force` — overwrite an existing `out` instead of suffixing it.
 
-**Look & feel**
+**Look & feel** (the `Style` dataclass)
 - `bg_color`, `track_faint`, `track_bright`, `marker_color`, `hud_color`, `title_color`
 - `font`
 - `logo`, `logo_position`
