@@ -12,7 +12,9 @@ from typing import Any
 
 import numpy as np
 
+from gpx_animate.application.ports import BasemapImage
 from gpx_animate.application.ports import RenderResult
+from gpx_animate.domain.bbox import Bbox
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Track
 
@@ -64,19 +66,44 @@ class FakeEncoder:
 
 
 class FakeBasemap:
-    """A BasemapProvider that records the call instead of fetching tiles."""
+    """A BasemapProvider that records the call instead of fetching tiles.
 
-    def __init__(self) -> None:
+    Attributes:
+        image: The array :meth:`get_image` returns. A mid-grey block, so it is
+            visible against both a light and a dark background.
+        attribution: Credit line to report, or ``None`` for a silent provider.
+        extent: Extent to claim, or ``None`` to cover whatever was asked for.
+    """
+
+    def __init__(
+        self,
+        image: np.ndarray | None = None,
+        attribution: str | None = None,
+        extent: tuple[float, float, float, float] | None = None,
+    ) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.image = np.full((2, 2, 3), 128, dtype=np.uint8) if image is None else image
+        self.attribution = attribution
+        self.extent = extent
 
-    def add_basemap(self, axes: Any, **options: Any) -> None:
-        """Record that a basemap was requested.
+    def get_image(self, bbox: Bbox, crs: str, zoom: int | str) -> BasemapImage:
+        """Record that a basemap was requested and hand back a fixed image.
 
         Args:
-            axes: Recorded by identity.
-            **options: Recorded, so tests can assert on crs and the like.
+            bbox: Recorded, so tests can assert which area was asked for.
+            crs: Recorded, so tests can assert which projection was requested.
+            zoom: Recorded.
+
+        Returns:
+            The fixed image, over :attr:`extent` or the whole of ``bbox``.
         """
-        self.calls.append({"axes": axes, **options})
+        self.calls.append({"bbox": bbox, "crs": crs, "zoom": zoom})
+        return BasemapImage(
+            image=self.image,
+            extent=self.extent or bbox.extent,
+            crs=crs,
+            attribution=self.attribution,
+        )
 
 
 class FakeLogoLoader:

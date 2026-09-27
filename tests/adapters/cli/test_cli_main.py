@@ -7,6 +7,7 @@ from pathlib import Path
 import gpxpy.gpx
 import pytest
 
+from gpx_animate.adapters.basemaps.factory import style_choices
 from gpx_animate.adapters.basemaps.tiles import available_styles
 from gpx_animate.adapters.cli import main as cli
 from gpx_animate.application.errors import FfmpegNotFoundError
@@ -212,6 +213,7 @@ class TestParser:
         assert dests == {
             "gpx",
             "style",
+            "tiff",
             "duration",
             "hold",
             "fps",
@@ -228,7 +230,11 @@ class TestParser:
         parser = cli.build_parser()
         style_action = next(a for a in parser._actions if a.dest == "style")
         assert style_action.choices is not None
-        assert tuple(style_action.choices) == available_styles()
+        assert tuple(style_action.choices) == style_choices()
+
+    def test_style_offers_none_alongside_the_tiles(self):
+        """--style none is a real option, not a gap in the tile catalogue."""
+        assert style_choices() == (*available_styles(), "none")
 
     def test_size_choices_come_from_the_presets(self):
         parser = cli.build_parser()

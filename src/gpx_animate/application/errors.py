@@ -18,3 +18,15 @@ class NoPointsError(GpxAnimateError, ValueError):
 
 class FfmpegNotFoundError(GpxAnimateError, RuntimeError):
     """ffmpeg is not on PATH, so the frames cannot be encoded."""
+
+
+class BasemapError(GpxAnimateError, ValueError):
+    """The requested basemap cannot be supplied."""
+
+
+class TiffNotReadableError(BasemapError):
+    """A ``--tiff`` basemap could not be opened, or held no usable bands."""
+
+
+class TiffOutsideViewError(BasemapError):
+    """A ``--tiff`` basemap does not overlap the area being rendered."""

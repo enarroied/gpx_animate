@@ -6,26 +6,28 @@ which diverges from the spec in ways that matter.
 
 ## Current state
 
-SPECS M0–M3 are done. The code is the hexagonal package the spec describes, it is
+SPECS M0–M4 are done. The code is the hexagonal package the spec describes, it is
 installable, and it can be configured from files and the environment.
 
 ```
 src/gpx_animate/
-├── domain/         track.py (Point, Track, haversine), style.py, render_config.py
+├── domain/         track.py (Point, Track, haversine), style.py, render_config.py, bbox.py (Bbox)
 ├── application/    ports.py (Protocols), errors.py, use_cases/{load_track,render_animation,export_video}.py
-├── adapters/       basemaps/{tiles,none}.py, renderers/matplotlib_renderer.py,
+├── adapters/       basemaps/{tiles,none,tiff,factory}.py, renderers/matplotlib_renderer.py,
 │                   encoders/ffmpeg_encoder.py, logos/registry.py, cli/main.py, gui/main.py (stub)
 └── config/         defaults.py, layers.py (reading a layer), loader.py (stacking them)
 ```
 
 - `pyproject.toml` has a `[build-system]` (hatchling) and
   `[project.scripts] gpx-animate`, so `uv sync` installs the project and
-  `uv run gpx-animate` / `uvx --from . gpx-animate` both work. `numpy` and
-  `requests` are now declared dependencies rather than arriving transitively.
+  `uv run gpx-animate` / `uvx --from . gpx-animate` both work. `numpy`,
+  `requests` and `rasterio` are now declared dependencies rather than arriving
+  transitively.
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
-  implementations) and `tests/fixtures/`. 296 tests at 100% statement **and**
+  implementations) and `tests/fixtures/`. 100% statement **and**
   branch coverage, with a 90% floor in `[tool.coverage.report] fail_under`.
+  378 tests: 370 offline plus 8 `integration`-marked ones.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
@@ -58,7 +60,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 296 tests, offline (tiles are faked)
+uv run pytest -q               # 370 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -77,7 +79,7 @@ there is no publish token to manage.
 
 | Version | Scope | Exit criteria |
 |---|---|---|
-| `0.0.0` | now: M0–M3 landed, unreleased | no tags yet |
+| `0.0.0` | now: M0–M4 landed, unreleased | no tags yet |
 | `0.1.0` | SPECS M3–M6 + US-10 GIF | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
@@ -109,8 +111,10 @@ work-in-progress edits. Same reason: any user-visible change updates
   or ffmpeg imports. `numpy` is fine (arithmetic, not I/O); `gpxpy` is not, which
   is why `load_track` lives in the *application* layer. The
   `tests/application/test_ports.py` conformance tests and the port annotations
-  both enforce this — `BasemapProvider.add_basemap(axes: Any)` is `Any` on
-  purpose so the port never names a matplotlib type.
+  both enforce this — as of M4 the basemap port hands over a plain
+  `BasemapImage` (ndarray + extent) instead of an `axes`, so it names no
+  matplotlib type at all. `domain/bbox.py` may not import rasterio either: it is
+  pure arithmetic, and the reading of the file lives in the adapter.
 - `matplotlib.use("Agg")` must stay before `import matplotlib.pyplot` inside
   `adapters/renderers/matplotlib_renderer.py`; the two `# noqa: E402` comments
   exist for that reason. The same pattern is load-bearing in
@@ -158,9 +162,22 @@ work-in-progress edits. Same reason: any user-visible change updates
   than `duration + hold`. Hold frames reuse the final state, so they are
   pixel-identical to the last draw frame.
 - The User-Agent is passed **explicitly** as `headers={"User-Agent": ...}` to
-  `contextily.add_basemap`. The monolith also mutated
+  `contextily.bounds2img`. The monolith also mutated
   `requests.utils.default_headers()["User-Agent"]` at import, which never took
   effect — that call rebuilds the dict every time. There is a test pinning this.
+- `TileBasemap.get_image` calls `warp_tiles` **unconditionally**, even when the
+  requested CRS already matches the tiles'. That is deliberate: M2 drew through
+  `contextily.add_basemap`, which always warps, so skipping the warp would shift
+  the output. Don't "optimise" it away without a pixel diff against the M2
+  reference in `/tmp/m2ref`.
+- `TiffBasemap` reads the **whole** file into memory and has no window/crop step.
+  That was scoped out of US-6; a large raster is a memory cost, not a correctness
+  one. It reprojects via `calculate_default_transform` + `reproject` and returns
+  `(rows, cols, bands)`, so a single-band raster is 3-D with a trailing 1.
+- `Bbox` is `(min_x, min_y, max_x, max_y)` but `BasemapImage.extent` is
+  matplotlib's `(min_x, max_x, min_y, max_y)`. The mix-up is silent — both are
+  four floats — so the conversion is pinned by tests. Rasterio `array_bounds`
+  returns `(west, south, east, north)`, a third order.
 - **The CLI reads the developer's own environment and `~/.config`.** `main()` calls
   `load_config(Path.cwd())`, so `tests/adapters/cli/test_cli_main.py` has an autouse
   `hermetic_config` fixture that strips `GPX_ANIMATE_*` from `os.environ`, points
@@ -222,11 +239,9 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS US-5 logo registry, US-6 basemap abstraction
-  (`--tiff`, `--style none` as a *CLI* option), US-7 boundary control, US-8 PyQt
-  GUI, US-10 GIF export: **not implemented**. Don't write code or docs as if they
-  exist. `BlankBasemap` exists as a port implementation and test aid, not as the
-  `--style none` feature.
+- SPECS US-5 logo registry, US-7 boundary control, US-8 PyQt GUI, US-10 GIF
+  export: **not implemented**. Don't write code or docs as if they exist. US-6 is
+  implemented as of M4 — `--tiff` and `--style none` are both real CLI options.
 
 ## Conventions (SPECS §6 — binding)
 

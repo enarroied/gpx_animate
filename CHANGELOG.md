@@ -27,6 +27,12 @@ Nothing has been released yet. Current state of the project:
   `voyager`, `dark`) are dropped at import time unless `CARTO_API_KEY` is set.
 - New: `--margin` (axes margin) and `--log-level` (`debug`/`info`/`warning`/`error`);
   library code logs through `logging` instead of `print()`.
+- New: `--tiff <file>` draws a GeoTIFF you supply instead of tiles, so a render needs no
+  tile server. It is reprojected to the render's projection if needed, and it must overlap
+  the area being drawn or you get an error rather than an empty frame. `--tiff` wins over
+  `--style`. New: `--style none` draws the track on the background colour with no map at
+  all, and needs no network either. `tiff` and `style` are also settable in config files
+  and the environment. Tile output is unchanged, including the on-map credit line.
 - New: invalid `--size`, `--logo-position`, `--fps`, `--duration`, `--hold`, `--dpi`
   or `--margin` values are rejected up front with a message and exit code 1.
 - **Behaviour change:** output now defaults to

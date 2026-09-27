@@ -11,6 +11,7 @@ pipeline red.
 
 import shutil
 
+import contextily as cx
 import pytest
 
 from gpx_animate.adapters.basemaps.tiles import available_styles
@@ -90,3 +91,49 @@ def test_a_logo_is_baked_into_the_video(short_track_gpx, tmp_path, logo_png):
     out = tmp_path / "with_logo.mp4"
     assert run_cli(short_track_gpx, out, duration=0.2, hold=0.0, logo=logo_png) == 0
     assert is_mp4(out)
+
+
+@pytest.mark.integration
+def test_style_none_renders_without_touching_the_network(
+    short_track_gpx, tmp_path, monkeypatch
+):
+    """SPECS US-6: a render with no map at all, and no tile server involved."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not on PATH")
+
+    def explode(*args, **kwargs):
+        raise AssertionError("--style none must not download tiles")
+
+    monkeypatch.setattr(cx, "bounds2img", explode)
+    out = tmp_path / "none.mp4"
+    assert run_cli(short_track_gpx, out, duration=0.2, hold=0.0, style="none") == 0
+    assert is_mp4(out)
+
+
+@pytest.mark.integration
+def test_a_tiff_basemap_renders(short_track_gpx, tmp_path, track_tiff, monkeypatch):
+    """SPECS US-6: bring your own GeoTIFF, and the video comes out of it."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not on PATH")
+
+    def explode(*args, **kwargs):
+        raise AssertionError("--tiff must not download tiles")
+
+    monkeypatch.setattr(cx, "bounds2img", explode)
+    out = tmp_path / "tiff.mp4"
+    assert run_cli(short_track_gpx, out, duration=0.2, hold=0.0, tiff=track_tiff) == 0
+    assert is_mp4(out)
+
+
+@pytest.mark.integration
+def test_a_missing_tiff_fails_before_rendering(short_track_gpx, tmp_path, capsys):
+    """A bad --tiff path is a message and exit 1, not a traceback mid-render.
+
+    The CLI configures logging onto stdout with force=True, which drops
+    pytest's own handler, so this reads the printed message rather than using
+    caplog.
+    """
+    out = tmp_path / "never.mp4"
+    assert run_cli(short_track_gpx, out, duration=0.2, hold=0.0, tiff="nope.tif") == 1
+    assert not out.exists()
+    assert "no such GeoTIFF" in capsys.readouterr().out

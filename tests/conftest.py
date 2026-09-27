@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
+import numpy as np
 import pytest
+import rasterio
+from rasterio.transform import from_bounds
 
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.render_config import RenderConfig
@@ -17,6 +20,37 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def short_track_gpx() -> Path:
     """A valid 15-point track with a <metadata><name> and elevations."""
     return FIXTURES / "short_track.gpx"
+
+
+@pytest.fixture(scope="session")
+def track_tiff(tmp_path_factory) -> Path:
+    """A small GeoTIFF covering the fixture track, in Web Mercator.
+
+    The track sits at 7.0E 45.0N, which is about 779500, 5622500 in Web
+    Mercator, and spans roughly 700 m by 2200 m. This raster is a 2 km square
+    around it, so the track and its 15% margin both fall inside; the provider
+    rejects a raster that does not overlap the view. Generated rather than
+    committed, so the file says what it is.
+    """
+    left, bottom, right, top = 778900.0, 5621000.0, 780900.0, 5625000.0
+    size = 64
+    path = tmp_path_factory.mktemp("tiff") / "track.tif"
+    # A diagonal gradient, so a mis-oriented render shows up as a flipped map.
+    ramp = np.tile(np.linspace(0, 255, size, dtype="uint8"), (size, 1))
+    pixels = np.stack([ramp, ramp.T, np.full((size, size), 40, dtype="uint8")])
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=size,
+        width=size,
+        count=3,
+        dtype="uint8",
+        crs="EPSG:3857",
+        transform=from_bounds(left, bottom, right, top, size, size),
+    ) as dst:
+        dst.write(pixels)
+    return path
 
 
 @pytest.fixture(scope="session")

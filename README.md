@@ -31,7 +31,7 @@ GPX file
   ├─ parse (gpxpy)               → lons, lats, elevations, trip name
   ├─ geometry (numpy)            → cumulative distance (haversine), elevation gain
   ├─ project (pyproj)            → EPSG:4326 → EPSG:3857 (Web Mercator)
-  ├─ basemap (contextily)        → tiles under the track
+  ├─ basemap                     → tiles, a GeoTIFF, or a flat colour under the track
   ├─ render (matplotlib)         → one PNG per frame
   │     · faint full track
   │     · bright growing line (LineCollection, updated per frame)
@@ -96,7 +96,8 @@ uv run gpx-animate my_trip.gpx --size 9:16 \
 | Flag | Type | Default | Notes |
 |---|---|---|---|
 | `gpx` | path (positional) | — | Input GPX file |
-| `--style` | enum | `topo` | `osm`, `topo`, `satellite`, plus `positron`/`voyager`/`dark` when `CARTO_API_KEY` is set |
+| `--style` | enum | `topo` | `osm`, `topo`, `satellite`, plus `positron`/`voyager`/`dark` when `CARTO_API_KEY` is set, or `none` for no map |
+| `--tiff` | path | — | Local GeoTIFF to draw instead of tiles; wins over `--style` |
 | `--duration` | float (s) | `5.0` | Length of the drawing phase |
 | `--hold` | float (s) | `1.0` | Pause on the finished trace |
 | `--fps` | int | `30` | Frame rate |
@@ -123,6 +124,28 @@ file already exists it becomes `--out__2`, `--out__3`, … instead of being
 replaced; `--force` restores the overwrite. The suffix is inserted before the
 extension, so `trip.mp4` becomes `trip__2.mp4`.
 
+### Choosing a basemap
+
+Three sources, picked in this order:
+
+1. `--tiff map.tif` — a GeoTIFF you supply. Nothing is downloaded.
+2. `--style none` — no map at all, just the background colour.
+3. `--style osm|topo|satellite` — tiles from the given provider (default `topo`).
+
+```bash
+uv run gpx-animate my_trip.gpx --tiff alps.tif     # your own imagery
+uv run gpx-animate my_trip.gpx --style none         # no map, no network
+```
+
+`--tiff` overrides `--style` whichever order they appear in, and either can be
+set in a config file (`tiff = "alps.tif"`, `style = "none"`).
+
+The GeoTIFF is reprojected into the render's Web Mercator frame if it is in
+another projection, and its whole file is read, so crop a large raster down
+first. It has to overlap the area being rendered: point `--tiff` at the wrong
+part of the world and you get a clear error rather than a blank frame. It must
+also declare a CRS.
+
 ---
 
 ## 5. Configuration
@@ -146,7 +169,8 @@ a config file or the environment.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `style` | str | `topo` | Basemap preset, see `TILE_PROVIDERS` |
+| `style` | str | `topo` | Basemap preset, see `TILE_PROVIDERS`; `none` draws no map |
+| `tiff` | path | *(none)* | Local GeoTIFF to draw instead of tiles; wins over `style` |
 | `duration` | float | `5.0` | Drawing phase, seconds |
 | `hold` | float | `1.0` | Hold phase after the trace is finished, seconds |
 | `fps` | int | `30` | Frame rate for both phases |
@@ -211,7 +235,9 @@ this tool's own, so nothing outside it should ever be there.
 
 ### Extensibility
 - **New basemap:** add one entry to `TILE_PROVIDERS` in
-  `gpx_animate.adapters.basemaps.tiles`.
+  `gpx_animate.adapters.basemaps.tiles`; it becomes a `--style` choice
+  automatically, and key-gated entries are only listed when their variable is
+  set.
 - **New aspect ratio:** add one entry to `SIZE_PRESETS` in
   `gpx_animate.domain.render_config`.
 - **New CLI flag:** add to `build_parser()`; the override is applied
@@ -229,7 +255,7 @@ this tool's own, so nothing outside it should ever be there.
    rendering is fragile across versions and slow for hundreds of frames. The
    goal here is a reproducible content pipeline, not a map-design tool.
 
-2. **contextily for basemaps.**
+2. **contextily for basemaps, and rasterio for `--tiff`.**
    One line to drop tiles under a projected track. Lets the "look" be a
    parameter rather than a project file.
 

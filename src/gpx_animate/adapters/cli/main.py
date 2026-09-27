@@ -18,8 +18,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from gpx_animate.adapters.basemaps.tiles import TileBasemap
-from gpx_animate.adapters.basemaps.tiles import available_styles
+from gpx_animate.adapters.basemaps.factory import build_basemap
+from gpx_animate.adapters.basemaps.factory import style_choices
 from gpx_animate.adapters.encoders.ffmpeg_encoder import FfmpegEncoder
 from gpx_animate.adapters.logos.registry import PngLogoLoader
 from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
@@ -58,8 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("gpx", type=Path, help="GPX file to animate")
     parser.add_argument(
         "--style",
-        choices=available_styles(),
+        choices=style_choices(),
         help="basemap style; the default ships in config/defaults.py",
+    )
+    parser.add_argument(
+        "--tiff",
+        type=Path,
+        help="local GeoTIFF to draw instead of downloaded tiles; wins over --style",
     )
     parser.add_argument("--duration", type=float, help="drawing duration in seconds")
     parser.add_argument("--hold", type=float, help="hold time at the end, seconds")
@@ -118,6 +123,7 @@ def config_from_args(
         field: getattr(args, field)
         for field in (
             "style",
+            "tiff",
             "duration",
             "hold",
             "fps",
@@ -174,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
             track.elevation_gain_m(),
         )
 
-        renderer = MatplotlibRenderer(TileBasemap(config.style), PngLogoLoader())
+        renderer = MatplotlibRenderer(build_basemap(config), PngLogoLoader())
         encoder = FfmpegEncoder()
 
         with tempfile.TemporaryDirectory() as frame_dir:

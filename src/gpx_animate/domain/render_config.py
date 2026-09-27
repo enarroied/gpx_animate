@@ -34,7 +34,8 @@ class RenderConfig:
     """Everything one render needs to know.
 
     Args:
-        style: Basemap style name, resolved by a basemap provider.
+        style: Basemap style name, resolved by a basemap provider. ``"none"``
+            draws no map at all.
         duration: Seconds of the drawing phase.
         hold: Seconds to hold the finished trace. May be zero.
         fps: Frames per second for both phases.
@@ -46,6 +47,9 @@ class RenderConfig:
         force: Overwrite an existing ``out`` instead of suffixing it.
         logo: Optional PNG drawn in a corner.
         logo_position: Which corner the logo sits in.
+        tiff: Optional local GeoTIFF to use instead of downloaded tiles. Wins
+            over ``style``, since bringing your own imagery leaves no choice to
+            make about a tile server.
         appearance: Colours and font.
 
     Raises:
@@ -64,6 +68,7 @@ class RenderConfig:
     force: bool = False
     logo: Path | None = None
     logo_position: str = "bottom-right"
+    tiff: Path | None = None
     appearance: Style = DEFAULT_STYLE
 
     def __post_init__(self) -> None:

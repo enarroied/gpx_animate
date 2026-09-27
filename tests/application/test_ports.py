@@ -1,5 +1,6 @@
 """The ports themselves: protocol conformance and the frame-numbering helper."""
 
+import numpy as np
 import pytest
 from fakes import FakeBasemap
 from fakes import FakeEncoder
@@ -7,15 +8,19 @@ from fakes import FakeLogoLoader
 from fakes import FakeRenderer
 
 from gpx_animate.adapters.basemaps.none import BlankBasemap
+from gpx_animate.adapters.basemaps.tiles import TileBasemap
+from gpx_animate.adapters.basemaps.tiles import available_styles
 from gpx_animate.adapters.encoders.ffmpeg_encoder import FfmpegEncoder
 from gpx_animate.adapters.logos.registry import PngLogoLoader
 from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
+from gpx_animate.application.ports import BasemapImage
 from gpx_animate.application.ports import BasemapProvider
 from gpx_animate.application.ports import Encoder
 from gpx_animate.application.ports import FrameRenderer
 from gpx_animate.application.ports import LogoLoader
 from gpx_animate.application.ports import RenderResult
 from gpx_animate.application.ports import frames_are_sequential
+from gpx_animate.domain.bbox import Bbox
 
 
 class TestFakesSatisfyThePorts:
@@ -36,10 +41,25 @@ class TestAdaptersSatisfyThePorts:
     def test_real_adapters_implement_the_same_contracts(self):
         assert isinstance(FfmpegEncoder(), Encoder)
         assert isinstance(BlankBasemap(), BasemapProvider)
+        assert isinstance(TileBasemap(available_styles()[0]), BasemapProvider)
         assert isinstance(PngLogoLoader(), LogoLoader)
         assert isinstance(
             MatplotlibRenderer(BlankBasemap(), PngLogoLoader()), FrameRenderer
         )
+
+
+class TestBasemapImage:
+    def test_bbox_reorders_extent_into_west_south_east_north(self):
+        image = BasemapImage(
+            image=np.zeros((2, 2, 3)),
+            extent=(-1.0, 1.0, -2.0, 2.0),
+            crs="EPSG:3857",
+        )
+        assert image.bbox == Bbox(-1.0, -2.0, 1.0, 2.0)
+
+    def test_attribution_defaults_to_none(self):
+        image = BasemapImage(image=np.zeros((2, 2, 3)), extent=(0, 1, 0, 1), crs="x")
+        assert image.attribution is None
 
 
 class TestFramesAreSequential:

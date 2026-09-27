@@ -4,6 +4,10 @@ Draws the same figure the monolith did, frame by frame, with the growing trace
 as a ``LineCollection`` whose segments are swapped out per frame. The
 basemap and the logo arrive as ports, so this module is the only place that
 knows both matplotlib and how a frame is put together.
+
+The basemap arrives as an image rather than being drawn by its own provider, so
+this is also where it is placed: the provider decides *what* the map is, this
+decides where it goes and who has to be credited for it.
 """
 
 from __future__ import annotations
@@ -14,16 +18,19 @@ from pathlib import Path
 import matplotlib
 import numpy as np
 import pyproj
+from matplotlib import patheffects
 
 
 matplotlib.use("Agg")
 # E402: pyplot must follow matplotlib.use("Agg") or it picks a GUI backend.
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.axes import Axes  # noqa: E402
 from matplotlib.collections import LineCollection  # noqa: E402
 
 from gpx_animate.application.ports import BasemapProvider
 from gpx_animate.application.ports import LogoLoader
 from gpx_animate.application.ports import RenderResult
+from gpx_animate.domain.bbox import Bbox
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Track
 
@@ -31,6 +38,13 @@ from gpx_animate.domain.track import Track
 logger = logging.getLogger(__name__)
 
 WEB_MERCATOR = "EPSG:3857"
+
+ATTRIBUTION_SIZE = 6
+"""Point size for a tile provider's credit line.
+
+Six is small but legible over a map, and it is what the tiles were drawn at
+before the basemap port existed, so the frames do not shift.
+"""
 
 # Corner anchor for each logo position: (x, y, horizontal align, vertical align).
 LOGO_ANCHORS: dict[str, tuple[float, float, str, str]] = {
@@ -94,13 +108,13 @@ class MatplotlibRenderer:
         ax.set_facecolor(appearance.bg_color)
 
         # Bounds with padding. A degenerate track (a single point, or a straight
-        # east-west line) has zero extent on one axis, hence the `or 1.0`.
-        pad_x = (X.max() - X.min()) * config.margin or 1.0
-        pad_y = (Y.max() - Y.min()) * config.margin or 1.0
-        ax.set_xlim(X.min() - pad_x, X.max() + pad_x)
-        ax.set_ylim(Y.min() - pad_y, Y.max() + pad_y)
+        # east-west line) has zero extent on one axis; Bbox.padded falls back to
+        # a one-unit pad there so the view is still drawable.
+        view = Bbox(X.min(), Y.min(), X.max(), Y.max()).padded(config.margin)
+        ax.set_xlim(view.min_x, view.max_x)
+        ax.set_ylim(view.min_y, view.max_y)
 
-        self.basemap.add_basemap(ax, crs=WEB_MERCATOR)
+        self.draw_basemap(ax, view)
 
         ax.plot(
             X,
@@ -237,3 +251,44 @@ class MatplotlibRenderer:
         """
         width, height = config.size_inches
         return round(width * config.dpi), round(height * config.dpi)
+
+    def draw_basemap(self, axes: Axes, view: Bbox) -> None:
+        """Draw the basemap image over ``view``.
+
+        The provider is asked for the padded view, not the track itself, so the
+        map covers the same ground as the axes including the margin. The axes
+        limits are set again afterwards because ``imshow`` otherwise resizes the
+        view to the image, which for a partial raster would shrink the frame
+        onto whatever the map happens to cover.
+
+        Args:
+            axes: The matplotlib axes to draw on.
+            view: The area to fill, in :data:`WEB_MERCATOR` units.
+        """
+        basemap = self.basemap.get_image(view, WEB_MERCATOR, "auto")
+        axes.imshow(
+            basemap.image,
+            extent=basemap.extent,
+            interpolation="bilinear",
+            aspect=axes.get_aspect(),
+        )
+        axes.set_xlim(view.min_x, view.max_x)
+        axes.set_ylim(view.min_y, view.max_y)
+        if basemap.attribution:
+            self.draw_attribution(axes, basemap.attribution)
+
+    def draw_attribution(self, axes: Axes, text: str) -> None:
+        """Credit a tile provider, as its terms of use require.
+
+        Args:
+            axes: The axes to write on.
+            text: The credit line the provider asked for.
+        """
+        axes.text(
+            0.005,
+            0.005,
+            text,
+            transform=axes.transAxes,
+            size=ATTRIBUTION_SIZE,
+            path_effects=[patheffects.withStroke(linewidth=2, foreground="w")],
+        )

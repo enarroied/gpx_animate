@@ -167,6 +167,32 @@ class TestErrorsReachTheUser:
             load(tmp_path, environ={"GPX_ANIMATE_DURATION": "-1"})
 
 
+class TestTiff:
+    """The TIFF key has to be settable in every layer like any other (US-6)."""
+
+    def test_it_comes_from_a_project_file(self, tmp_path):
+        config = load(tmp_path, project_toml='tiff = "map.tif"')
+        assert config.tiff == Path("map.tif")
+
+    def test_it_comes_from_the_environment(self, tmp_path):
+        config = load(tmp_path, environ={"GPX_ANIMATE_TIFF": "map.tif"})
+        assert config.tiff == Path("map.tif")
+
+    def test_it_defaults_to_unset(self, tmp_path):
+        assert load(tmp_path).tiff is None
+
+    def test_a_blank_one_means_unset(self):
+        assert coerce_overrides({"tiff": "  "}, origin="test")["tiff"] is None
+
+    def test_a_home_relative_one_is_expanded(self):
+        assert coerce_overrides({"tiff": "~/map.tif"}, origin="test")["tiff"] == (
+            Path.home() / "map.tif"
+        )
+
+    def test_style_none_survives_the_file(self, tmp_path):
+        assert load(tmp_path, project_toml='style = "none"').style == "none"
+
+
 class TestReadsTheRealEnvironment:
     def test_defaults_to_the_process_environment(self, tmp_path, monkeypatch):
         monkeypatch.setenv("GPX_ANIMATE_HOLD", "0.5")

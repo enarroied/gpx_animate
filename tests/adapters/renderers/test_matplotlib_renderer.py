@@ -1,5 +1,7 @@
 """Frame rendering with matplotlib, driven through fake ports."""
 
+import dataclasses
+
 import matplotlib
 
 
@@ -7,20 +9,28 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+import pyproj  # noqa: E402
 import pytest  # noqa: E402
 from fakes import FakeBasemap  # noqa: E402
 from fakes import FakeLogoLoader  # noqa: E402
 
-from gpx_animate.adapters.renderers.matplotlib_renderer import (
+from gpx_animate.adapters.basemaps.none import BlankBasemap  # noqa: E402
+from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
     LOGO_ANCHORS,  # noqa: E402
 )
 from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
     MatplotlibRenderer,
 )
 from gpx_animate.application.ports import frames_are_sequential  # noqa: E402
+from gpx_animate.domain.bbox import Bbox  # noqa: E402
+from gpx_animate.domain.render_config import DEFAULT_STYLE  # noqa: E402
 from gpx_animate.domain.render_config import LOGO_POSITIONS  # noqa: E402
 from gpx_animate.domain.render_config import RenderConfig  # noqa: E402
 from gpx_animate.domain.track import Track  # noqa: E402
+
+
+VIEW = Bbox(-800000.0, -600000.0, 800000.0, 600000.0)
+"""A stand-in view in Spherical Mercator, for the drawing tests."""
 
 
 @pytest.fixture
@@ -119,6 +129,53 @@ class TestBasemapPort:
         )
         assert basemap.calls[0]["crs"] == "EPSG:3857"
 
+    def test_is_asked_to_let_the_provider_choose_the_zoom(self, track, tmp_path):
+        basemap = FakeBasemap()
+        MatplotlibRenderer(basemap, FakeLogoLoader()).render(
+            RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20), track, tmp_path
+        )
+        assert basemap.calls[0]["zoom"] == "auto"
+
+    def _view_for(self, track, tmp_path, **kwargs):
+        """Render and return the view the port was asked to cover."""
+        basemap = FakeBasemap()
+        config = RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, **kwargs)
+        MatplotlibRenderer(basemap, FakeLogoLoader()).render(
+            config, track, tmp_path / f"m{kwargs.get('margin')}"
+        )
+        return basemap.calls[0]["bbox"]
+
+    def test_the_margin_reaches_the_provider(self, track, tmp_path):
+        """The map has to reach the frame edges, so the padding is part of the ask."""
+        tight = self._view_for(track, tmp_path, margin=0.0)
+        padded = self._view_for(track, tmp_path, margin=0.5)
+        assert padded.width > tight.width
+        assert padded.height > tight.height
+        assert padded.min_x < tight.min_x and padded.max_x > tight.max_x
+
+    def test_the_provider_is_asked_for_exactly_the_padded_view(self, track, tmp_path):
+        """The port is handed the final view, already padded: if the renderer
+        asked for the bare track and padded the image itself, a partial raster
+        would arrive at the wrong size."""
+        transformer = pyproj.Transformer.from_crs(
+            "EPSG:4326", "EPSG:3857", always_xy=True
+        )
+        xs, ys = transformer.transform(track.longitudes, track.latitudes)
+        expected = Bbox(xs.min(), ys.min(), xs.max(), ys.max()).padded(0.15)
+        basemap = FakeBasemap()
+        MatplotlibRenderer(basemap, FakeLogoLoader()).render(
+            RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, margin=0.15),
+            track,
+            tmp_path,
+        )
+        assert basemap.calls[0]["bbox"] == expected
+
+    def test_a_degenerate_track_still_gets_a_drawable_view(self, tmp_path):
+        """margin=0 is no *extra* padding; a one-unit floor keeps it drawable."""
+        dot = Track.from_rows([(7.0, 45.0, 100.0)], name="Dot")
+        view = self._view_for(dot, tmp_path, margin=0.0)
+        assert view.width > 0 and view.height > 0
+
     def test_the_track_is_visible_against_the_background(
         self, renderer, track, tmp_path
     ):
@@ -133,6 +190,115 @@ class TestBasemapPort:
             np.linalg.norm(pixels - faint, axis=-1)
             < np.linalg.norm(pixels - background, axis=-1)
         ).any()
+
+
+class TestBasemapDrawing:
+    """draw_basemap is the seam between the port and the axes."""
+
+    def test_the_image_is_drawn_onto_the_axes(self):
+        basemap = FakeBasemap(image=np.full((2, 2, 3), 0, dtype=np.uint8))
+        fig, ax = plt.subplots()
+        try:
+            MatplotlibRenderer(basemap, FakeLogoLoader()).draw_basemap(ax, VIEW)
+            assert len(ax.images) == 1
+            drawn = ax.images[0].get_array()
+            assert drawn is not None
+            assert np.array_equal(drawn, basemap.image)
+        finally:
+            plt.close(fig)
+
+    def test_the_image_is_placed_at_its_own_extent(self):
+        fig, ax = plt.subplots()
+        try:
+            MatplotlibRenderer(FakeBasemap(), FakeLogoLoader()).draw_basemap(ax, VIEW)
+            assert tuple(ax.images[0].get_extent()) == VIEW.extent
+        finally:
+            plt.close(fig)
+
+    def test_the_view_survives_an_image_that_covers_less(self):
+        """imshow would otherwise resize the axes onto the image, and a partial
+        raster would shrink the frame to whatever it happens to cover."""
+        basemap = FakeBasemap(extent=(0.0, 1.0, 0.0, 1.0))
+        fig, ax = plt.subplots()
+        try:
+            MatplotlibRenderer(basemap, FakeLogoLoader()).draw_basemap(ax, VIEW)
+            assert ax.get_xlim() == pytest.approx((VIEW.min_x, VIEW.max_x))
+            assert ax.get_ylim() == pytest.approx((VIEW.min_y, VIEW.max_y))
+        finally:
+            plt.close(fig)
+
+    def test_a_none_style_render_is_a_flat_colour(self, track, tmp_path):
+        """--style none: the frame is the background, with only the track on it."""
+        config = RenderConfig(
+            duration=0.2, hold=0.0, fps=5, dpi=20, style="none", margin=0.15
+        )
+        result = MatplotlibRenderer(
+            BlankBasemap(color=config.appearance.bg_color), FakeLogoLoader()
+        ).render(config, track, tmp_path)
+        pixels = plt.imread(result.frame_paths[0])
+        background = np.array([0xF5, 0xF5, 0xF2]) / 255
+        # The top-left corner is padding, so nothing has been drawn there.
+        assert np.allclose(pixels[2, 2, :3], background, atol=0.02)
+
+    def test_a_none_style_render_is_the_configured_background(self, track, tmp_path):
+        """A dark background must actually come out dark.
+
+        ``BlankBasemap`` returns a transparent block, so the colour can only
+        arrive via the axes patch the renderer paints. If that stopped happening,
+        ``--style none`` would quietly fall back to white behind dark track ink.
+        """
+        appearance = dataclasses.replace(DEFAULT_STYLE, bg_color="#101010")
+        config = RenderConfig(
+            duration=0.2,
+            hold=0.0,
+            fps=5,
+            dpi=20,
+            style="none",
+            margin=0.15,
+            appearance=appearance,
+        )
+        result = MatplotlibRenderer(
+            BlankBasemap(color=config.appearance.bg_color), FakeLogoLoader()
+        ).render(config, track, tmp_path)
+        pixels = plt.imread(result.frame_paths[0])
+        assert np.allclose(pixels[2, 2, :3], np.array([0x10] * 3) / 255, atol=0.02)
+
+
+class TestAttribution:
+    def test_a_credit_line_is_drawn(self):
+        basemap = FakeBasemap(attribution="© Someone")
+        fig, ax = plt.subplots()
+        try:
+            MatplotlibRenderer(basemap, FakeLogoLoader()).draw_basemap(ax, VIEW)
+            assert basemap.attribution in [text.get_text() for text in ax.texts]
+        finally:
+            plt.close(fig)
+
+    def test_a_provider_with_no_terms_credits_nothing(self):
+        fig, ax = plt.subplots()
+        try:
+            MatplotlibRenderer(FakeBasemap(), FakeLogoLoader()).draw_basemap(ax, VIEW)
+            assert len(ax.texts) == 0
+        finally:
+            plt.close(fig)
+
+    def test_the_credit_line_reaches_the_pixels(self, track, tmp_path):
+        """OSM's terms require the credit to be visible, not merely carried."""
+        config = RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=40)
+        plain = (
+            MatplotlibRenderer(FakeBasemap(), FakeLogoLoader())
+            .render(config, track, tmp_path / "a")
+            .frame_paths[0]
+        )
+        credited = (
+            MatplotlibRenderer(
+                FakeBasemap(attribution="© OpenStreetMap contributors"),
+                FakeLogoLoader(),
+            )
+            .render(config, track, tmp_path / "b")
+            .frame_paths[0]
+        )
+        assert not np.array_equal(plt.imread(plain), plt.imread(credited))
 
 
 class TestLogoPort:

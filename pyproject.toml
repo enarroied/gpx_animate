@@ -10,6 +10,7 @@ dependencies = [
     "matplotlib>=3.11.2",
     "numpy>=2.0.0",
     "pyproj>=3.7.2",
+    "rasterio>=1.4.4",
 ]
 
 # The project is installable as of M2: there is finally a package to install,

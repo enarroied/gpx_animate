@@ -93,6 +93,7 @@ COERCERS: dict[str, Callable[[Any], Any]] = {
     "out": _to_optional_path,
     "output_dir": _to_path,
     "logo": _to_optional_path,
+    "tiff": _to_optional_path,
 }
 """How each non-string key is converted. Everything else is a string."""
 
