@@ -88,7 +88,7 @@ def env_key_map() -> dict[str, str]:
 
     ``appearance.bg_color`` becomes ``APPEARANCE_BG_COLOR``, matching SPECS
     section 5: nested groups are env-var sub-keys. The whole suffix is matched,
-    never a prefix, so ``LOGO`` and ``LOGO_POSITION`` stay distinct.
+    never a prefix, so ``LOGO_START`` and ``LOGO_MARKER`` stay distinct.
 
     Returns:
         Uppercase env suffix to dotted config path.

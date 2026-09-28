@@ -13,8 +13,11 @@ from typing import Any
 import numpy as np
 
 from gpx_animate.application.ports import BasemapImage
+from gpx_animate.application.ports import Logo
 from gpx_animate.application.ports import RenderResult
 from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.logo import DEFAULT_LOGO_ANCHOR
+from gpx_animate.domain.logo import DEFAULT_LOGO_SIZE_PX
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Track
 
@@ -107,23 +110,35 @@ class FakeBasemap:
 
 
 class FakeLogoLoader:
-    """A LogoLoader that returns a fixed array instead of reading a file."""
+    """A LogoLoader that returns a fixed logo instead of reading a file."""
 
-    def __init__(self, image: np.ndarray | None = None) -> None:
-        """Set the array returned by :meth:`load`.
+    def __init__(
+        self,
+        image: np.ndarray | None = None,
+        *,
+        anchor: str = DEFAULT_LOGO_ANCHOR,
+        size_px: int = DEFAULT_LOGO_SIZE_PX,
+    ) -> None:
+        """Set what :meth:`resolve` returns.
 
         Args:
             image: The image to return. Defaults to an opaque black square;
                 a zeros array would be fully transparent and draw nothing.
+            anchor: Anchor the returned logo carries.
+            size_px: Width the returned logo carries.
         """
         self.image = np.ones((2, 2, 4)) if image is None else image
+        self.anchor = anchor
+        self.size_px = size_px
         self.calls: list[str] = []
 
-    def load(self, source: str) -> np.ndarray:
-        """Return the fixed image.
+    def resolve(self, source: str) -> Logo:
+        """Return the fixed logo.
 
         Args:
             source: Recorded, so tests can assert which logo was asked for.
         """
         self.calls.append(source)
-        return self.image
+        return Logo(
+            image=self.image, anchor=self.anchor, size_px=self.size_px, source=source
+        )

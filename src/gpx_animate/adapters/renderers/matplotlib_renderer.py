@@ -13,6 +13,7 @@ decides where it goes and who has to be credited for it.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import matplotlib
@@ -26,11 +27,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes  # noqa: E402
 from matplotlib.collections import LineCollection  # noqa: E402
+from matplotlib.image import AxesImage  # noqa: E402
 
 from gpx_animate.application.ports import BasemapProvider
+from gpx_animate.application.ports import Logo
 from gpx_animate.application.ports import LogoLoader
 from gpx_animate.application.ports import RenderResult
 from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.logo import LOGO_ANCHORS
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Track
 
@@ -46,13 +50,62 @@ Six is small but legible over a map, and it is what the tiles were drawn at
 before the basemap port existed, so the frames do not shift.
 """
 
-# Corner anchor for each logo position: (x, y, horizontal align, vertical align).
-LOGO_ANCHORS: dict[str, tuple[float, float, str, str]] = {
-    "bottom-right": (0.98, 0.05, "right", "bottom"),
-    "bottom-left": (0.02, 0.05, "left", "bottom"),
-    "top-right": (0.98, 0.95, "right", "top"),
-    "top-left": (0.02, 0.95, "left", "top"),
-}
+LOGO_ZORDER = 10
+"""Draw order for logos. Above the track and the head marker, so a logo is never
+half-hidden behind the line it is annotating."""
+
+
+def _side_offsets(
+    side_x: str, side_y: str, width: float, height: float
+) -> tuple[float, float, float, float]:
+    """Offsets from an anchor point to the image box, as ``(x0, x1, y0, y1)``.
+
+    Args:
+        side_x: Which side of the point the image body falls on, horizontally.
+        side_y: The same, vertically.
+        width: Image width in data units.
+        height: Image height in data units.
+
+    Returns:
+        The box, in the point's own coordinates rather than absolute ones.
+    """
+    x0 = {"left": -width, "center": -width / 2, "right": 0.0}[side_x]
+    y0 = {"below": -height, "center": -height / 2, "above": 0.0}[side_y]
+    return x0, x0 + width, y0, y0 + height
+
+
+def _logo_box(
+    logo: Logo, x: float, y: float, units_per_px: tuple[float, float]
+) -> tuple[float, float, float, float]:
+    """Place a logo on a point, in the data units of the axes.
+
+    ``size_px`` is a width in device pixels of the finished frame, so it has to
+    be converted through the axes' own scale to become data units. The view is
+    fixed for the whole render, so one conversion covers every frame, which is
+    what lets the marker logo keep a constant on-screen size while it travels.
+
+    Each side is converted through *its own* axis scale, not derived from the
+    other. The axes is square in pixels but the padded view is usually not
+    square in data units — a track with a lot of climbing in it is tall and
+    narrow — so the two axes disagree on how many data units a pixel is. Taking
+    the width in x units and reusing it as a height in y units would stretch or
+    squash every logo to suit the shape of the track.
+
+    Args:
+        logo: The image and its placement.
+        x: Anchor point on the x axis, in data units.
+        y: Anchor point on the y axis, in data units.
+        units_per_px: ``(x, y)`` data units per device pixel.
+
+    Returns:
+        An ``imshow`` extent, ``(min_x, max_x, min_y, max_y)``.
+    """
+    units_x, units_y = units_per_px
+    width = logo.size_px * units_x
+    height = logo.size_px * logo.aspect * units_y
+    side_x, side_y = LOGO_ANCHORS[logo.anchor]
+    dx0, dx1, dy0, dy1 = _side_offsets(side_x, side_y, width, height)
+    return x + dx0, x + dx1, y + dy0, y + dy1
 
 
 class MatplotlibRenderer:
@@ -189,23 +242,10 @@ class MatplotlibRenderer:
             zorder=10,
         )
 
-        if config.logo:
-            anchor_x, anchor_y, h_align, _ = LOGO_ANCHORS[config.logo_position]
-            right_edge = anchor_x - 0.12
-            ax.imshow(
-                self.logos.load(str(config.logo)),
-                transform=ax.transAxes,
-                zorder=10,
-                extent=(
-                    (right_edge, anchor_x, anchor_y, anchor_y + 0.12)
-                    if h_align == "right"
-                    else (anchor_x, anchor_x + 0.12, anchor_y, anchor_y + 0.12)
-                ),
-                aspect="auto",
-            )
-
         ax.set_axis_off()
         fig.tight_layout(pad=0)
+
+        marker_logo = self._draw_logos(ax, config, X, Y, view, fig)
 
         frame_paths: list[Path] = []
         for index in range(n_frames):
@@ -220,6 +260,8 @@ class MatplotlibRenderer:
             revealed = segments[: n_points - 1]
             line.set_segments(revealed)  # ty: ignore[invalid-argument-type]
             marker.set_data([X[n_points - 1]], [Y[n_points - 1]])
+            if marker_logo is not None:
+                marker_logo(X[n_points - 1], Y[n_points - 1])
 
             done_km = dists[n_points - 1]
             done_ele = ele[n_points - 1]
@@ -251,6 +293,90 @@ class MatplotlibRenderer:
         """
         width, height = config.size_inches
         return round(width * config.dpi), round(height * config.dpi)
+
+    def _draw_logos(
+        self,
+        axes: Axes,
+        config: RenderConfig,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        view: Bbox,
+        fig: plt.Figure,
+    ) -> Callable[[float, float], None] | None:
+        """Draw the start, end and marker logos, if any were asked for.
+
+        The start and end logos are static, so they are drawn once. The marker
+        is handed back as a callable that moves it, since it follows the head of
+        the growing line.
+
+        The axes' pixel size is only known once the figure has been laid out and
+        drawn at least once, which is why this runs after ``tight_layout`` and
+        makes the renderer do one throwaway draw. That is the price of a logo
+        size expressed in pixels rather than as a fraction of the canvas, which
+        is the only version of "size" that means the same thing in a thumbnail
+        and in a 4K export.
+
+        Args:
+            axes: The axes to draw on.
+            config: Says which logos were requested.
+            xs: Track longitudes, projected.
+            ys: Track latitudes, projected.
+            view: The area on screen, for the pixel-to-data conversion.
+            fig: The figure, used to realise the axes geometry.
+
+        Returns:
+            A callable that moves the marker logo to a point, or ``None`` when
+            no marker logo was requested.
+        """
+        wanted = {
+            "start": config.logo_start,
+            "end": config.logo_end,
+            "marker": config.logo_marker,
+        }
+        logos = {key: self.logos.resolve(src) for key, src in wanted.items() if src}
+        if not logos:
+            return None
+
+        fig.canvas.draw()
+        box = axes.get_window_extent()
+        units_per_px = (
+            (view.max_x - view.min_x) / box.width,
+            (view.max_y - view.min_y) / box.height,
+        )
+
+        for key, x, y in (("start", xs[0], ys[0]), ("end", xs[-1], ys[-1])):
+            logo = logos.get(key)
+            if logo is None:
+                continue
+            axes.imshow(
+                logo.image,
+                extent=_logo_box(logo, x, y, units_per_px),
+                aspect="auto",
+                origin="upper",
+                zorder=LOGO_ZORDER,
+            )
+            logger.debug("Drew %s logo %r at (%.1f, %.1f)", key, logo.source, x, y)
+
+        move_marker: Callable[[float, float], None] | None = None
+        moving = logos.get("marker")
+        if moving is not None:
+            image = axes.imshow(
+                moving.image,
+                extent=_logo_box(moving, xs[0], ys[0], units_per_px),
+                aspect="auto",
+                origin="upper",
+                zorder=LOGO_ZORDER,
+            )
+
+            def move_marker(x: float, y: float, image: AxesImage = image) -> None:
+                image.set_extent(_logo_box(moving, x, y, units_per_px))
+
+        # imshow resizes the view to whatever it drew, so put the frame back.
+        # A logo on the last point legitimately hangs outside the view and must
+        # not be clipped to it, so this is limits only, not a clip box.
+        axes.set_xlim(view.min_x, view.max_x)
+        axes.set_ylim(view.min_y, view.max_y)
+        return move_marker
 
     def draw_basemap(self, axes: Axes, view: Bbox) -> None:
         """Draw the basemap image over ``view``.

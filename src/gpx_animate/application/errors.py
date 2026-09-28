@@ -30,3 +30,19 @@ class TiffNotReadableError(BasemapError):
 
 class TiffOutsideViewError(BasemapError):
     """A ``--tiff`` basemap does not overlap the area being rendered."""
+
+
+class UnknownLogoError(GpxAnimateError, ValueError):
+    """A ``--logo-*`` source matched neither a file on disk nor a registry name."""
+
+
+class LogoFileNotFoundError(GpxAnimateError, FileNotFoundError):
+    """A logo source, or the file a registry entry points at, does not exist."""
+
+
+class LogoUnreadableError(GpxAnimateError, OSError):
+    """A logo file exists but could not be read as an image."""
+
+
+class LogoRegistryError(GpxAnimateError, ValueError):
+    """``logos/registry.yaml`` is present but cannot be used as written."""

@@ -89,7 +89,9 @@ def test_a_logo_is_baked_into_the_video(short_track_gpx, tmp_path, logo_png):
         pytest.skip("ffmpeg is not on PATH")
 
     out = tmp_path / "with_logo.mp4"
-    assert run_cli(short_track_gpx, out, duration=0.2, hold=0.0, logo=logo_png) == 0
+    assert (
+        run_cli(short_track_gpx, out, duration=0.2, hold=0.0, logo_start=logo_png) == 0
+    )
     assert is_mp4(out)
 
 

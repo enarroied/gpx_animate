@@ -33,7 +33,7 @@ Nothing has been released yet. Current state of the project:
   `--style`. New: `--style none` draws the track on the background colour with no map at
   all, and needs no network either. `tiff` and `style` are also settable in config files
   and the environment. Tile output is unchanged, including the on-map credit line.
-- New: invalid `--size`, `--logo-position`, `--fps`, `--duration`, `--hold`, `--dpi`
+- New: invalid `--size`, `--fps`, `--duration`, `--hold`, `--dpi`
   or `--margin` values are rejected up front with a message and exit code 1.
 - **Behaviour change:** output now defaults to
   `./output/<gpx_stem>__<YYYYMMDD-HHMMSS>.mp4`, created on demand, instead of overwriting
@@ -46,5 +46,12 @@ Nothing has been released yet. Current state of the project:
   `output_dir`, `dpi` and the `appearance.*` colours, which have no flags. An unknown key
   in a file or a stray `GPX_ANIMATE_*` variable is reported at startup with the list of
   valid keys instead of being ignored.
-- Specified in `SPECS.md` but not implemented: logo registry (US-5), boundary flags
-  (US-7), PyQt GUI (US-8), GIF export (US-10).
+- New: `--logo-start`, `--logo-end` and `--logo-marker` place a PNG at the trip's start
+  point, end point and moving head. Each source is a path to an image or a name from the
+  logo registry (default `./logos/registry.yaml`, overridable with `--logo-registry`).
+  Registry entries may set an anchor and a default size; anchors are "side on x / side on
+  y" (`left|center|right` × `above|center|below`). **The corner `--logo` and
+  `--logo-position` flags are gone**, replaced by the three point-anchored flags; the same
+  three fields replace `logo` / `logo_position` in config files and the environment.
+- Specified in `SPECS.md` but not implemented: boundary flags (US-7), PyQt GUI (US-8), GIF
+  export (US-10).

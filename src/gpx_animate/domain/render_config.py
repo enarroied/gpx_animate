@@ -22,9 +22,6 @@ SIZE_PRESETS: dict[str, tuple[float, float]] = {
 }
 """Output aspect presets, as matplotlib figure sizes in inches."""
 
-LOGO_POSITIONS = ("bottom-right", "bottom-left", "top-right", "top-left")
-"""Corner anchors a logo can be pinned to."""
-
 DEFAULT_OUTPUT_DIR = Path("output")
 """Where renders land when ``--out`` is not given, relative to the cwd."""
 
@@ -45,8 +42,11 @@ class RenderConfig:
         out: Destination file, or ``None`` to let the output resolver decide.
         output_dir: Directory for the generated name when ``out`` is ``None``.
         force: Overwrite an existing ``out`` instead of suffixing it.
-        logo: Optional PNG drawn in a corner.
-        logo_position: Which corner the logo sits in.
+        logo_start: Logo drawn statically on the track's first point.
+        logo_end: Logo drawn statically on the track's last point.
+        logo_marker: Logo drawn on the head of the growing line, moving with it.
+            Each is a registry name or a path to an image; which one, and how
+            the logo is sized and anchored, is resolved outside the domain.
         tiff: Optional local GeoTIFF to use instead of downloaded tiles. Wins
             over ``style``, since bringing your own imagery leaves no choice to
             make about a tile server.
@@ -66,8 +66,9 @@ class RenderConfig:
     out: Path | None = None
     output_dir: Path = DEFAULT_OUTPUT_DIR
     force: bool = False
-    logo: Path | None = None
-    logo_position: str = "bottom-right"
+    logo_start: str | None = None
+    logo_end: str | None = None
+    logo_marker: str | None = None
     tiff: Path | None = None
     appearance: Style = DEFAULT_STYLE
 
@@ -86,11 +87,13 @@ class RenderConfig:
             raise ValueError(
                 f"size must be one of {sorted(SIZE_PRESETS)}, got {self.size!r}"
             )
-        if self.logo_position not in LOGO_POSITIONS:
-            raise ValueError(
-                f"logo_position must be one of {list(LOGO_POSITIONS)}, "
-                f"got {self.logo_position!r}"
-            )
+        for field in ("logo_start", "logo_end", "logo_marker"):
+            value = getattr(self, field)
+            # The field is a str and not a Path because it may be a registry
+            # name instead of a file, so an empty one is a mistake worth
+            # reporting: resolving "" would look for a file with no name.
+            if value is not None and not value.strip():
+                raise ValueError(f"{field} must be a name or a path, not empty")
 
     @property
     def size_inches(self) -> tuple[float, float]:

@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from gpx_animate.config.defaults import default_config
-from gpx_animate.domain.render_config import LOGO_POSITIONS
 from gpx_animate.domain.render_config import SIZE_PRESETS
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.style import DEFAULT_STYLE
@@ -49,13 +48,26 @@ class TestValidation:
     def test_every_preset_is_accepted(self, size):
         assert RenderConfig(size=size).size_inches == SIZE_PRESETS[size]
 
-    def test_unknown_logo_position_is_rejected(self):
-        with pytest.raises(ValueError, match="logo_position must be one of"):
-            RenderConfig(logo_position="middle")
+    def test_logo_sources_stay_plain_strings(self):
+        """A source may be a registry name, so it cannot be a Path."""
+        config = RenderConfig(logo_start="car", logo_end="/tmp/x.png", logo_marker="~")
+        assert config.logo_start == "car"
+        assert config.logo_end == "/tmp/x.png"
+        assert config.logo_marker == "~"
 
-    @pytest.mark.parametrize("position", LOGO_POSITIONS)
-    def test_every_logo_position_is_accepted(self, position):
-        assert RenderConfig(logo_position=position).logo_position == position
+    @pytest.mark.parametrize("field", ["logo_start", "logo_end", "logo_marker"])
+    def test_an_empty_logo_source_is_rejected(self, field):
+        kwargs = {
+            "logo_start": "   ",
+            "logo_end": "   ",
+            "logo_marker": "   ",
+        }
+        with pytest.raises(ValueError, match="must be a name or a path, not empty"):
+            _config_with_logo(field, kwargs[field])
+
+    @pytest.mark.parametrize("field", ["logo_start", "logo_end", "logo_marker"])
+    def test_logo_sources_default_to_none(self, field):
+        assert getattr(RenderConfig(), field) is None
 
     def test_is_frozen(self):
         config = RenderConfig()
@@ -103,7 +115,9 @@ class TestDefaults:
         assert (config.duration, config.hold, config.fps) == (5.0, 1.0, 30)
         assert (config.size, config.dpi, config.margin) == ("16:9", 150, 0.15)
         assert config.out is None
-        assert config.logo is None
+        assert config.logo_start is None
+        assert config.logo_end is None
+        assert config.logo_marker is None
         assert config.appearance is DEFAULT_STYLE
 
     def test_default_appearance_is_the_previous_palette(self):
@@ -129,3 +143,14 @@ class TestDefaults:
         second = default_config()
         assert first is not second
         assert replace(first, fps=10) != second
+
+
+def _config_with_logo(field: str, value: str) -> RenderConfig:
+    """A config with one logo field set, spelled out explicitly so ty sees the
+    real type instead of a `**{field: value}` spread of `str` against every
+    field type."""
+    if field == "logo_start":
+        return RenderConfig(logo_start=value)
+    if field == "logo_end":
+        return RenderConfig(logo_end=value)
+    return RenderConfig(logo_marker=value)

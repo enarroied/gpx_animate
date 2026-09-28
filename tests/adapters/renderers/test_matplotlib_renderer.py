@@ -16,15 +16,17 @@ from fakes import FakeLogoLoader  # noqa: E402
 
 from gpx_animate.adapters.basemaps.none import BlankBasemap  # noqa: E402
 from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
-    LOGO_ANCHORS,  # noqa: E402
-)
-from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
     MatplotlibRenderer,
 )
+from gpx_animate.adapters.renderers.matplotlib_renderer import _logo_box  # noqa: E402
+from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
+    _side_offsets,
+)
+from gpx_animate.application.ports import Logo  # noqa: E402
 from gpx_animate.application.ports import frames_are_sequential  # noqa: E402
 from gpx_animate.domain.bbox import Bbox  # noqa: E402
+from gpx_animate.domain.logo import LOGO_ANCHORS  # noqa: E402
 from gpx_animate.domain.render_config import DEFAULT_STYLE  # noqa: E402
-from gpx_animate.domain.render_config import LOGO_POSITIONS  # noqa: E402
 from gpx_animate.domain.render_config import RenderConfig  # noqa: E402
 from gpx_animate.domain.track import Track  # noqa: E402
 
@@ -110,7 +112,7 @@ class TestFrameOutput:
 
     def test_renders_without_a_logo_by_default(self, renderer, track, tmp_path):
         config = RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20)
-        assert config.logo is None
+        assert (config.logo_start, config.logo_end, config.logo_marker) == (None,) * 3
         assert renderer.render(config, track, tmp_path).frame_count == 1
 
 
@@ -301,39 +303,8 @@ class TestAttribution:
         assert not np.array_equal(plt.imread(plain), plt.imread(credited))
 
 
-class TestLogoPort:
-    @pytest.mark.parametrize("position", LOGO_POSITIONS)
-    def test_every_position_renders(self, track, tmp_path, logo_png, position):
-        config = RenderConfig(
-            duration=0.2,
-            hold=0.0,
-            fps=5,
-            dpi=30,
-            logo=logo_png,
-            logo_position=position,
-        )
-        logos = FakeLogoLoader()
-        result = MatplotlibRenderer(FakeBasemap(), logos).render(
-            config, track, tmp_path
-        )
-        assert result.frame_count == 1
-        assert logos.calls == [str(logo_png)]
-
-    @pytest.mark.parametrize(
-        ("position", "ha", "va"),
-        [
-            ("bottom-right", "right", "bottom"),
-            ("bottom-left", "left", "bottom"),
-            ("top-right", "right", "top"),
-            ("top-left", "left", "top"),
-        ],
-    )
-    def test_each_anchor_matches_its_corner(self, position, ha, va):
-        """A right-anchored logo extends leftwards; the extent depends on it."""
-        x, y, h_align, v_align = LOGO_ANCHORS[position]
-        assert (h_align, v_align) == (ha, va)
-        assert x == (0.98 if ha == "right" else 0.02)
-        assert y == (0.05 if va == "bottom" else 0.95)
+class TestLogoPlacement:
+    """Logos are anchored to points on the map, not to canvas corners."""
 
     def test_the_logo_loader_is_not_called_without_a_logo(
         self, track, tmp_path, renderer
@@ -347,14 +318,7 @@ class TestLogoPort:
     def test_a_logo_changes_the_pixels(self, track, tmp_path, logo_png):
         """An opaque logo must actually appear; a transparent one would not."""
         plain = RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=30)
-        with_logo = RenderConfig(
-            duration=0.2,
-            hold=0.0,
-            fps=5,
-            dpi=30,
-            logo=logo_png,
-            logo_position="bottom-right",
-        )
+        with_logo = dataclasses.replace(plain, logo_start=str(logo_png))
         first = (
             MatplotlibRenderer(FakeBasemap(), FakeLogoLoader())
             .render(plain, track, tmp_path / "a")
@@ -370,18 +334,11 @@ class TestLogoPort:
     def test_a_transparent_logo_draws_nothing(self, track, tmp_path):
         """Alpha 0 is invisible, so such a render matches the no-logo one.
 
-        The fixture logo has visible pixels as well as transparency, which is
-        what makes the test above meaningful.
+        The fake's default image is opaque, which is what makes the test above
+        meaningful.
         """
         plain = RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=30)
-        invisible = RenderConfig(
-            duration=0.2,
-            hold=0.0,
-            fps=5,
-            dpi=30,
-            logo=tmp_path / "nothing.png",
-            logo_position="bottom-right",
-        )
+        invisible = dataclasses.replace(plain, logo_start="car")
         first = (
             MatplotlibRenderer(FakeBasemap(), FakeLogoLoader())
             .render(plain, track, tmp_path / "a")
@@ -393,6 +350,175 @@ class TestLogoPort:
             .frame_paths[0]
         )
         assert np.array_equal(plt.imread(first), plt.imread(second))
+
+    def test_a_transparent_logo_keeps_the_view(self, track, tmp_path):
+        """imshow resizes the view to whatever it drew, so the limits have to
+        be put back; with them restored, a logo never zooms the map."""
+        plain = RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=30)
+        with_logo = dataclasses.replace(plain, logo_start="car")
+        renderer = MatplotlibRenderer(
+            FakeBasemap(), FakeLogoLoader(np.zeros((4, 4, 4)))
+        )
+        first = renderer.render(plain, track, tmp_path / "a").frame_paths[0]
+        second = renderer.render(with_logo, track, tmp_path / "b").frame_paths[0]
+        assert np.array_equal(plt.imread(first), plt.imread(second))
+        assert renderer.figure_size(plain) == renderer.figure_size(with_logo)
+
+    def test_each_flag_resolves_its_own_source(self, track, tmp_path):
+        config = RenderConfig(
+            duration=0.2,
+            hold=0.0,
+            fps=5,
+            dpi=20,
+            logo_start="a",
+            logo_end="b",
+            logo_marker="c",
+        )
+        logos = FakeLogoLoader()
+        MatplotlibRenderer(FakeBasemap(), logos).render(config, track, tmp_path)
+        assert sorted(logos.calls) == ["a", "b", "c"]
+
+    @pytest.mark.parametrize("field", ["start", "end", "marker"])
+    def test_a_single_placement_resolves_only_it(self, track, tmp_path, field):
+        config = _single_logo_config(field, "car")
+        logos = FakeLogoLoader()
+        MatplotlibRenderer(FakeBasemap(), logos).render(config, track, tmp_path)
+        assert logos.calls == ["car"]
+
+
+def _single_logo_config(field: str, source: str) -> RenderConfig:
+    """A config with exactly one logo placement, written explicitly so ty can
+    see which field is being set — a `**{f"logo_{field}": ...}` spread makes it
+    check every field against every value."""
+    if field == "start":
+        return RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, logo_start=source)
+    if field == "end":
+        return RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, logo_end=source)
+    return RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, logo_marker=source)
+
+
+@pytest.mark.parametrize("anchor", sorted(LOGO_ANCHORS))
+class TestAnchors:
+    """Every domain anchor is accepted by the renderer."""
+
+    def test_every_anchor_renders(self, track, tmp_path, anchor):
+        config = RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, logo_start="car")
+        result = MatplotlibRenderer(
+            FakeBasemap(), FakeLogoLoader(anchor=anchor)
+        ).render(config, track, tmp_path)
+        assert result.frame_count == 1
+
+
+class TestLogoGeometry:
+    """The geometry helpers, checked directly rather than through a figure."""
+
+    def test_centre_straddles_the_point(self):
+        box = _logo_box(_square_logo("center", 20), 100.0, 200.0, (2.0, 3.0))
+        assert box == (100.0 - 20.0, 100.0 + 20.0, 200.0 - 30.0, 200.0 + 30.0)
+
+    def test_bottom_sits_the_logo_above_the_point(self):
+        box = _logo_box(_square_logo("bottom", 20), 100.0, 200.0, (2.0, 3.0))
+        assert box[0:2] == (100.0 - 20.0, 100.0 + 20.0)
+        assert box[2] == 200.0
+
+    def test_top_hangs_the_logo_below_the_point(self):
+        box = _logo_box(_square_logo("top", 20), 100.0, 200.0, (2.0, 3.0))
+        assert box[3] == 200.0
+
+    def test_left_puts_the_logo_left_of_the_point(self):
+        box = _logo_box(_square_logo("left", 20), 100.0, 200.0, (2.0, 3.0))
+        assert box[1] == 100.0
+
+    def test_right_puts_the_logo_right_of_the_point(self):
+        box = _logo_box(_square_logo("right", 20), 100.0, 200.0, (2.0, 3.0))
+        assert box[0] == 100.0
+
+    def test_each_axis_converts_through_its_own_scale(self):
+        """A square logo is only square on screen if the two scales are used
+        separately. A track with a lot of climbing gives a view far taller
+        than it is wide, so one data unit is not worth the same pixels on
+        both axes, and the height must come from the y scale."""
+        square = _square_logo("center", 10)
+        box = _logo_box(square, 0.0, 0.0, (2.0, 5.0))
+        assert box[1] - box[0] == pytest.approx(20.0)
+        assert box[3] - box[2] == pytest.approx(50.0)
+
+    def test_a_wide_image_keeps_its_aspect(self):
+        wide = Logo(
+            image=np.zeros((8, 16, 4), dtype=float),
+            anchor="center",
+            size_px=20,
+            source="wide",
+        )
+        box = _logo_box(wide, 0.0, 0.0, (1.0, 1.0))
+        assert box[1] - box[0] == pytest.approx(20.0)
+        assert box[3] - box[2] == pytest.approx(10.0)
+
+    def test_side_offsets_centre_on_the_point(self):
+        assert _side_offsets("center", "center", 4.0, 6.0) == (-2.0, 2.0, -3.0, 3.0)
+
+    def test_side_offsets_put_the_long_side_towards_its_named_neighbour(self):
+        assert _side_offsets("left", "above", 4.0, 6.0) == (-4.0, 0.0, 0.0, 6.0)
+
+
+def _square_logo(anchor: str, size_px: int) -> Logo:
+    """A square logo for the geometry helpers."""
+    return Logo(
+        image=np.zeros((size_px, size_px, 4), dtype=float),
+        anchor=anchor,
+        size_px=size_px,
+        source="car",
+    )
+
+
+class TestLogoSizing:
+    """A logo's on-screen size is its pixel size, whatever the canvas."""
+
+    @pytest.mark.parametrize("size", ["16:9", "1:1", "9:16"])
+    def test_the_logo_is_size_px_wide_on_screen(self, track, tmp_path, size):
+        config = RenderConfig(
+            duration=0.2, hold=0.0, fps=5, dpi=100, size=size, logo_start="car"
+        )
+        frame = _render_frame(track, tmp_path, config, size_px=40)
+        assert _red_width(frame) == pytest.approx(40, abs=1)
+
+    def test_a_rising_dpi_does_not_enlarge_the_logo(self, track, tmp_path):
+        """size_px is in device pixels, so a finer frame is a not a bigger logo."""
+        config = RenderConfig(
+            duration=0.2, hold=0.0, fps=5, dpi=100, size="1:1", logo_start="car"
+        )
+        frame = _render_frame(track, tmp_path, config, size_px=40)
+        assert _red_width(frame) == pytest.approx(40, abs=1)
+
+    def test_a_wider_request_draws_a_wider_logo(self, track, tmp_path):
+        config = RenderConfig(
+            duration=0.2, hold=0.0, fps=5, dpi=100, size="1:1", logo_start="car"
+        )
+        frame = _render_frame(track, tmp_path, config, size_px=80)
+        assert _red_width(frame) == pytest.approx(80, abs=1)
+
+
+def _render_frame(track, tmp_path, config, *, size_px) -> np.ndarray:
+    """Render one frame with a red square logo of a known width."""
+    result = MatplotlibRenderer(
+        FakeBasemap(), FakeLogoLoader(_red_square(), size_px=size_px)
+    ).render(config, track, tmp_path)
+    return plt.imread(result.frame_paths[0])
+
+
+def _red_square() -> np.ndarray:
+    """Opaque red, so the logo is distinguishable from the default background."""
+    square = np.zeros((8, 8, 4), dtype=float)
+    square[..., 0] = 1.0
+    square[..., 3] = 1.0
+    return square
+
+
+def _red_width(frame: np.ndarray) -> int:
+    """The on-screen width in pixels of the red logo in a frame."""
+    mask = (frame[..., 0] > 0.9) & (frame[..., 1] < 0.1) & (frame[..., 2] < 0.1)
+    columns = np.nonzero(mask.sum(axis=0) > 0)[0]
+    return int(columns.max() - columns.min() + 1)
 
 
 class TestHud:

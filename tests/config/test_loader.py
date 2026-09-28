@@ -75,7 +75,8 @@ class TestCoercion:
             ("dpi", 300, 300),
             ("output_dir", "renders", Path("renders")),
             ("out", "a/b.mp4", Path("a/b.mp4")),
-            ("logo", "brand.png", Path("brand.png")),
+            ("logo_start", "brand.png", "brand.png"),
+            ("logo_end", "car", "car"),
             ("force", "yes", True),
             ("force", "off", False),
             ("force", True, True),
@@ -96,9 +97,11 @@ class TestCoercion:
     def test_a_blank_optional_path_means_unset(self):
         assert coerce_overrides({"out": "  "}, origin="test")["out"] is None
 
-    def test_a_home_relative_path_is_expanded(self):
-        assert coerce_overrides({"logo": "~/logo.png"}, origin="test")["logo"] == (
-            Path.home() / "logo.png"
+    def test_a_logo_source_is_left_as_a_string(self):
+        """A source may be a registry name, so it survives Path-free."""
+        assert (
+            coerce_overrides({"logo_start": "~/x.png"}, origin="test")["logo_start"]
+            == "~/x.png"
         )
 
     def test_a_word_where_a_number_belongs_names_the_key(self):

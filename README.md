@@ -86,9 +86,9 @@ uv run gpx-animate my_trip.gpx --style topo --out topo.mp4
 # Square for Medium / Instagram
 uv run gpx-animate my_trip.gpx --size 1:1 --out square.mp4
 
-# Vertical for Shorts / Reels, with a watermark
+# Vertical for Shorts / Reels, with start- and end-point logos
 uv run gpx-animate my_trip.gpx --size 9:16 \
-    --logo brand.png --logo-position top-left
+    --logo-start brand.png --logo-end brand.png
 ```
 
 ### CLI flags
@@ -104,12 +104,36 @@ uv run gpx-animate my_trip.gpx --size 9:16 \
 | `--size` | enum | `16:9` | `16:9`, `1:1`, `9:16` |
 | `--out` | path | — | Output file; suffixed if it exists unless `--force` |
 | `--force` | flag | off | Overwrite `--out` instead of suffixing it |
-| `--logo` | path | `None` | PNG with transparency |
-| `--logo-position` | enum | `bottom-right` | `bottom-right`, `bottom-left`, `top-right`, `top-left` |
+| `--logo-start` | str | `None` | Logo at the start point: a registry name or an image path |
+| `--logo-end` | str | `None` | Logo at the end point, same resolution |
+| `--logo-marker` | str | `None` | Logo that rides the moving head marker |
+| `--logo-registry` | path | `./logos/registry.yaml` | YAML registry mapping names to logo files |
 | `--margin` | float | `0.15` | Fractional margin around the track bounding box |
 | `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
 
 Total clip length = `duration + hold` (default **6 s**: 5 s drawing + 1 s hold).
+
+### Logos
+
+`--logo-start`, `--logo-end` and `--logo-marker` place a PNG at the trip's start
+point, end point and moving head. Each source is either a path to an image or a
+name from the logo registry (default `./logos/registry.yaml`, overridable with
+`--logo-registry`). A path wins over a name of the same spelling. Registry
+entries may also set placement defaults, and a relative `file:` is resolved
+against the registry's own directory:
+
+```yaml
+# logos/registry.yaml
+logos:
+  bike:
+    file: bike.png          # -> logos/bike.png
+    anchor: bottom          # center (x), bottom (y); default anchor: center
+    default_size_px: 96     # width in device pixels; default 48
+```
+
+Anchors are named as *side on x* and *side on y* from `left`, `center`, `right`
+and `above`, `center`, `below`. The image keeps its aspect; `default_size_px`
+is the width.
 
 ### Where the video goes
 
@@ -179,8 +203,9 @@ a config file or the environment.
 | `out` | path | *(none)* | Output file; blank means "generate one" |
 | `output_dir` | path | `output` | Where the generated name goes |
 | `force` | bool | `false` | Overwrite `out` instead of suffixing it |
-| `logo` | path | *(none)* | PNG with transparency to brand the frames |
-| `logo_position` | str | `bottom-right` | `bottom-right`, `bottom-left`, `top-right`, `top-left` |
+| `logo_start` | str | *(none)* | Logo at the start point: a registry name or a path |
+| `logo_end` | str | *(none)* | Logo at the end point, same resolution |
+| `logo_marker` | str | *(none)* | Logo that rides the moving head marker |
 | `appearance.bg_color` | str | `#f5f5f2` | Figure background |
 | `appearance.track_faint` | str | `#b8b8b8` | The whole track, before it is drawn |
 | `appearance.track_bright` | str | `#e63946` | The part drawn so far |

@@ -37,13 +37,17 @@ class TestKeys:
     def test_env_names_replace_the_dot_with_an_underscore(self):
         mapping = env_key_map()
         assert mapping["APPEARANCE_BG_COLOR"] == "appearance.bg_color"
-        assert mapping["LOGO_POSITION"] == "logo_position"
+        assert mapping["LOGO_START"] == "logo_start"
+        assert mapping["LOGO_END"] == "logo_end"
+        assert mapping["LOGO_MARKER"] == "logo_marker"
 
     def test_env_names_do_not_collide(self):
-        """LOGO and LOGO_POSITION share a prefix but must stay distinct keys."""
+        """LOGO_START, LOGO_END and LOGO_MARKER share a prefix but stay
+        distinct keys."""
         mapping = env_key_map()
-        assert mapping["LOGO"] == "logo"
-        assert mapping["LOGO_POSITION"] == "logo_position"
+        assert mapping["LOGO_START"] == "logo_start"
+        assert mapping["LOGO_END"] == "logo_end"
+        assert mapping["LOGO_MARKER"] == "logo_marker"
         assert len(mapping) == len(settable_keys())
 
     def test_the_group_name_is_not_settable_on_its_own(self):
@@ -126,7 +130,12 @@ class TestReadEnvLayer:
         ("variable", "value", "expected"),
         [
             ("GPX_ANIMATE_DURATION", "2.5", {"duration": "2.5"}),
-            ("GPX_ANIMATE_LOGO_POSITION", "top-left", {"logo_position": "top-left"}),
+            ("GPX_ANIMATE_LOGO_START", "car", {"logo_start": "car"}),
+            (
+                "GPX_ANIMATE_LOGO_MARKER",
+                "~/walking.png",
+                {"logo_marker": "~/walking.png"},
+            ),
             (
                 "GPX_ANIMATE_APPEARANCE_BG_COLOR",
                 "#000000",

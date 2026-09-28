@@ -21,6 +21,8 @@ from pathlib import Path
 from gpx_animate.adapters.basemaps.factory import build_basemap
 from gpx_animate.adapters.basemaps.factory import style_choices
 from gpx_animate.adapters.encoders.ffmpeg_encoder import FfmpegEncoder
+from gpx_animate.adapters.logos.registry import DEFAULT_REGISTRY_PATH
+from gpx_animate.adapters.logos.registry import LogoRegistry
 from gpx_animate.adapters.logos.registry import PngLogoLoader
 from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
 from gpx_animate.application.errors import GpxAnimateError
@@ -31,7 +33,6 @@ from gpx_animate.application.use_cases.resolve_output import resolve_output_path
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
 from gpx_animate.config.loader import load_config
-from gpx_animate.domain.render_config import LOGO_POSITIONS
 from gpx_animate.domain.render_config import RenderConfig
 
 
@@ -86,11 +87,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="overwrite --out if it exists instead of suffixing it",
     )
-    parser.add_argument("--logo", type=Path, help="PNG to draw in a corner")
     parser.add_argument(
-        "--logo-position",
-        choices=list(LOGO_POSITIONS),
-        help="which corner the logo sits in",
+        "--logo-start",
+        metavar="NAME|PATH",
+        help="logo drawn on the track's first point, still",
+    )
+    parser.add_argument(
+        "--logo-end",
+        metavar="NAME|PATH",
+        help="logo drawn on the track's last point, still",
+    )
+    parser.add_argument(
+        "--logo-marker",
+        metavar="NAME|PATH",
+        help="logo drawn on the head of the growing line, moving with it",
+    )
+    parser.add_argument(
+        "--logo-registry",
+        type=Path,
+        metavar="PATH",
+        help=f"registry mapping names to images [default: {DEFAULT_REGISTRY_PATH}]",
     )
     parser.add_argument(
         "--log-level",
@@ -131,8 +147,9 @@ def config_from_args(
             "margin",
             "out",
             "force",
-            "logo",
-            "logo_position",
+            "logo_start",
+            "logo_end",
+            "logo_marker",
         )
         if getattr(args, field, None) is not None
     }
@@ -180,11 +197,12 @@ def main(argv: list[str] | None = None) -> int:
             track.elevation_gain_m(),
         )
 
-        renderer = MatplotlibRenderer(build_basemap(config), PngLogoLoader())
+        logos = PngLogoLoader(LogoRegistry(args.logo_registry))
+        renderer = MatplotlibRenderer(build_basemap(config), logos)
         encoder = FfmpegEncoder()
 
         with tempfile.TemporaryDirectory() as frame_dir:
-            frames = render_animation(config, track, Path(frame_dir), renderer)
+            frames = render_animation(config, track, Path(frame_dir), renderer, logos)
             out_path = export_video(config, frames, encoder)
     except GpxAnimateError as error:
         # Deliberate failures get a message, not a traceback.

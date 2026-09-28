@@ -21,8 +21,8 @@ src/gpx_animate/
 - `pyproject.toml` has a `[build-system]` (hatchling) and
   `[project.scripts] gpx-animate`, so `uv sync` installs the project and
   `uv run gpx-animate` / `uvx --from . gpx-animate` both work. `numpy`,
-  `requests` and `rasterio` are now declared dependencies rather than arriving
-  transitively.
+  `requests`, `rasterio` and `pyyaml` are now declared dependencies rather than
+  arriving transitively.
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 100% statement **and**
@@ -158,12 +158,33 @@ work-in-progress edits. Same reason: any user-visible change updates
   `force = true` in a config file could never win. Same trap applies to any future
   on/off flag.
 - `RenderConfig` rejects `fps <= 0`, `duration <= 0`, `hold < 0`, `dpi <= 0`,
-  `margin < 0`, unknown `size` and unknown `logo_position` at construction, so
-  the CLI turns those into exit code 1 instead of a confusing render failure.
+  `margin < 0`, unknown `size`, empty `logo_start`/`logo_end`/`logo_marker` at
+  construction, so the CLI turns those into exit code 1 instead of a confusing
+  render failure.
 - Frame count is `int(duration*fps) + int(hold*fps)` and the truncation is
   intentional: a sub-frame phase disappears and the clip can come out shorter
   than `duration + hold`. Hold frames reuse the final state, so they are
   pixel-identical to the last draw frame.
+- Logo sources (`--logo-start|end|marker`) are a **name or a path** — a plain
+  string, deliberately not `Path`, because a registry name is not a filesystem
+  path. `--logo-registry` is CLI wiring only, *not* a `RenderConfig` field, so it
+  is intentionally absent from the config keys and the `COERCERS` table.
+  Fail-fast resolution happens in `render_animation` (before the render log
+  line); the renderer resolves again for its own use. `PngLogoLoader.resolve`
+  treats an existing file as winning over a same-spelled registry name, decides
+  whether a miss was a path by `_looks_like_path` (separator or suffix — so a
+  typo'd path gets "file does not exist", not "unknown name"), and relative
+  `file:` entries are resolved against the **registry's own directory**, not the
+  cwd. Registry validation is strict: unknown entry keys, blank `file:`, unknown
+  anchors and non-positive `default_size_px` are all `LogoRegistryError`s.
+- Logo drawing in `matplotlib_renderer.py`: images use `aspect="auto"` and
+  `origin="upper"`; xlim/ylim are re-asserted after each `imshow`. Placement
+  converts `size_px` through **each axis's own scale**
+  (`w = size_px*units_x`, `h = size_px*aspect*units_y`) — one shared x-derived
+  scale squashes logos on wide screens. The mid trip marker logo is a single
+  `AxesImage` moved per frame via a closure; start/end logos are drawn once. One
+  throwaway `fig.canvas.draw()` realizes the axes extent so the device-px math
+  is correct after `tight_layout`.
 - The User-Agent is passed **explicitly** as `headers={"User-Agent": ...}` to
   `contextily.bounds2img`. The monolith also mutated
   `requests.utils.default_headers()["User-Agent"]` at import, which never took
@@ -242,9 +263,10 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS US-5 logo registry, US-7 boundary control, US-8 PyQt GUI, US-10 GIF
-  export: **not implemented**. Don't write code or docs as if they exist. US-6 is
-  implemented as of M4 — `--tiff` and `--style none` are both real CLI options.
+- SPECS US-7 boundary control, US-8 PyQt GUI, US-10 GIF export: **not
+  implemented**. Don't write code or docs as if they exist. US-5 (logo registry)
+  and US-6 are implemented as of M5 — `--logo-start|end|marker` plus
+  `--logo-registry`, and `--tiff` / `--style none` are real CLI options.
 
 ## Conventions (SPECS §6 — binding)
 

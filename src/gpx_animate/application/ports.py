@@ -126,18 +126,58 @@ class Encoder(Protocol):
         """
 
 
+@dataclass(frozen=True)
+class Logo:
+    """A logo image, and how it should sit on its anchor point.
+
+    This is deliberately more than a bare array. Placement in US-5 is a
+    property of the *logo* rather than of the invocation: ``--logo-start car``
+    and ``--logo-marker car`` place the same file differently, because the
+    registry says ``walking_man`` anchors ``bottom`` while ``car`` anchors
+    ``center``. Resolving that here, once, is what keeps the renderer from
+    needing to know about registry files.
+
+    Args:
+        image: Pixel values, ready for ``imshow``. Row 0 is the top edge.
+        anchor: A key into :data:`~gpx_animate.domain.logo.LOGO_ANCHORS`.
+        size_px: Width in device pixels of the rendered frame.
+        source: The registry name or path this was resolved from, for messages.
+    """
+
+    image: np.ndarray
+    anchor: str
+    size_px: int
+    source: str
+
+    @property
+    def aspect(self) -> float:
+        """Height as a multiple of width, from the image's own shape.
+
+        Used to size a logo without distorting it: ``size_px`` sets the width
+        and the height follows the pixels.
+        """
+        cols = self.image.shape[1]
+        return self.image.shape[0] / cols if cols else 1.0
+
+
 @runtime_checkable
 class LogoLoader(Protocol):
-    """Loads a logo image for the renderer to draw."""
+    """Turns a ``--logo-*`` source into something the renderer can draw."""
 
-    def load(self, source: str) -> np.ndarray:
-        """Read a logo into an image array.
+    def resolve(self, source: str) -> Logo:
+        """Resolve a registry name or a file path to a drawable logo.
 
         Args:
-            source: A path, or a name from the logo registry.
+            source: Either a name from the logo registry or a path to an image.
 
         Returns:
-            The image as a float array, ready for ``imshow``.
+            The image plus the placement to use for it.
+
+        Raises:
+            UnknownLogoError: The source is neither a file nor a known name.
+            LogoFileNotFoundError: The source, or a registry entry's file, is
+                missing.
+            LogoRegistryError: The registry file is unusable as written.
         """
 
 

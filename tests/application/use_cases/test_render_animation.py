@@ -1,12 +1,17 @@
 """The render_animation use case, driven through a fake renderer port.
 
 SPECS US-3: with a fake renderer port, assert the correct number of frames and
-that the last N are held.
+that the last N are held. US-5: the logo sources are resolved up front, so a
+missing logo fails before the renderer is even asked to draw.
 """
 
+from fakes import FakeLogoLoader
 from fakes import FakeRenderer
 from pytest import raises
 
+from gpx_animate.adapters.logos.registry import PngLogoLoader
+from gpx_animate.application.errors import LogoFileNotFoundError
+from gpx_animate.application.errors import UnknownLogoError
 from gpx_animate.application.use_cases.render_animation import render_animation
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Point
@@ -61,3 +66,62 @@ class TestFrameCounts:
     def test_an_invalid_config_never_reaches_the_renderer(self, track, tmp_path):
         with raises(ValueError, match="fps must be > 0"):
             render_animation(RenderConfig(fps=0), track, tmp_path, FakeRenderer())
+
+
+class TestLogoSources:
+    def test_no_logos_means_nothing_is_resolved(self, track, tmp_path):
+        logos = FakeLogoLoader()
+        render_animation(
+            RenderConfig(duration=0.2, hold=0.0, fps=5),
+            track,
+            tmp_path,
+            FakeRenderer(),
+            logos,
+        )
+        assert logos.calls == []
+
+    def test_every_requested_source_is_resolved_before_rendering(self, track, tmp_path):
+        config = RenderConfig(
+            duration=0.2,
+            hold=0.0,
+            fps=5,
+            logo_start="a",
+            logo_end="b",
+            logo_marker="c",
+        )
+        logos = FakeLogoLoader()
+        renderer = FakeRenderer()
+        render_animation(config, track, tmp_path, renderer, logos)
+        assert sorted(logos.calls) == ["a", "b", "c"]
+        assert len(renderer.calls) == 1
+
+    def test_a_bad_source_raises_and_never_renders(self, track, tmp_path, monkeypatch):
+        config = RenderConfig(duration=0.2, hold=0.0, fps=5, logo_start="missing")
+
+        class Exploding(FakeLogoLoader):
+            def resolve(self, source):  # noqa: D102
+                raise UnknownLogoError(f"{source} is unknown")
+
+        with raises(UnknownLogoError, match="missing"):
+            render_animation(config, track, tmp_path, FakeRenderer(), Exploding())
+        assert len(FakeRenderer().calls) == 0
+
+    def test_a_missing_file_is_reported_not_a_traceback(
+        self, track, tmp_path, logo_png
+    ):
+        """:exc:`LogoFileNotFoundError` is deliberate, and gets a message."""
+
+        class Missing(PngLogoLoader):
+            def resolve(self, source):  # noqa: D102
+                raise LogoFileNotFoundError(f"logo file {source!r} does not exist")
+
+        config = RenderConfig(duration=0.2, hold=0.0, fps=5, logo_start="car")
+        with raises(LogoFileNotFoundError):
+            render_animation(config, track, tmp_path, FakeRenderer(), Missing())
+
+    def test_without_a_loader_nothing_is_validated(self, track, tmp_path):
+        """No logos port, no pre-flight: the renderer would catch it or not."""
+        config = RenderConfig(duration=0.2, hold=0.0, fps=5, logo_start="nope")
+        renderer = FakeRenderer()
+        render_animation(config, track, tmp_path, renderer)
+        assert len(renderer.calls) == 1

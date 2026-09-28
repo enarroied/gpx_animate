@@ -12,6 +12,9 @@ from gpx_animate.adapters.basemaps.tiles import available_styles
 from gpx_animate.adapters.cli import main as cli
 from gpx_animate.application.errors import FfmpegNotFoundError
 from gpx_animate.application.ports import RenderResult
+from gpx_animate.application.use_cases.render_animation import (
+    render_animation as real_render_animation,
+)
 from gpx_animate.config import layers
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
@@ -30,7 +33,7 @@ class Recorder:
     def load(self, gpx_path):
         raise AssertionError("load_track should not be stubbed")
 
-    def render(self, config, track, out_dir, renderer):
+    def render(self, config, track, out_dir, renderer, logos=None):
         """Stand in for render_animation(config, track, out_dir, renderer)."""
         self.configs.append(config)
         if self.raise_on_render:
@@ -170,7 +173,9 @@ class TestFlagPrecedence:
             ("--fps", "12", "fps", 12),
             ("--size", "9:16", "size", "9:16"),
             ("--margin", "0.4", "margin", 0.4),
-            ("--logo-position", "top-left", "logo_position", "top-left"),
+            ("--logo-start", "car", "logo_start", "car"),
+            ("--logo-end", "/abs/x.png", "logo_end", "/abs/x.png"),
+            ("--logo-marker", "walking_man", "logo_marker", "walking_man"),
         ],
     )
     def test_each_flag_reaches_the_config(
@@ -179,13 +184,16 @@ class TestFlagPrecedence:
         run(str(short_track_gpx), flag, value, "--out", str(tmp_path / "v.mp4"))
         assert getattr(recorder.configs[0], field) == expected
 
-    def test_out_and_logo_are_paths(self, recorder, short_track_gpx, tmp_path):
-        logo = tmp_path / "logo.png"
-        logo.write_bytes(b"not really a png")
-        out = tmp_path / "v.mp4"
-        run(str(short_track_gpx), "--logo", str(logo), "--out", str(out))
-        assert recorder.configs[0].logo == logo
-        assert recorder.configs[0].out == out
+    def test_a_logo_source_stays_a_string(self, recorder, short_track_gpx, tmp_path):
+        """A --logo-* value may be a registry name, so it is not a Path."""
+        run(
+            str(short_track_gpx),
+            "--logo-start",
+            "car",
+            "--out",
+            str(tmp_path / "v.mp4"),
+        )
+        assert recorder.configs[0].logo_start == "car"
 
     def test_defaults_survive_when_only_one_flag_is_given(
         self, recorder, short_track_gpx, tmp_path
@@ -221,8 +229,10 @@ class TestParser:
             "margin",
             "out",
             "force",
-            "logo",
-            "logo_position",
+            "logo_start",
+            "logo_end",
+            "logo_marker",
+            "logo_registry",
             "log_level",
         }
 
@@ -292,6 +302,101 @@ class TestFailure:
             run(str(short_track_gpx), "--fps", "0", "--out", str(tmp_path / "v.mp4"))
             == 1
         )
+
+
+class TestLogoResolution:
+    """The real logo fail-fast, driven through main() with a fake renderer.
+
+    The recorder fixture stubs render_animation, which is the point of the tests
+    above; but the logo check lives *in* render_animation, so to see it here we
+    restore the real one and stub the renderer instead — an image that is only
+    ever constructed, never drawn.
+    """
+
+    @pytest.fixture
+    def real_render(self, monkeypatch, tmp_path):
+        fake = _FakeRenderer()
+
+        def fake_encode(config, frames, encoder) -> Path:
+            return config.out
+
+        monkeypatch.setattr(cli, "render_animation", real_render_animation)
+        monkeypatch.setattr(cli, "MatplotlibRenderer", lambda basemap, logos: fake)
+        monkeypatch.setattr(cli, "export_video", fake_encode)
+        return fake
+
+    def test_a_missing_logo_exits_one_before_rendering(
+        self, real_render, capsys, short_track_gpx, tmp_path
+    ):
+        rc = run(
+            str(short_track_gpx),
+            "--logo-start",
+            "bogus",
+            "--out",
+            str(tmp_path / "v.mp4"),
+        )
+        assert rc == 1
+        assert real_render.calls == 0
+
+    def test_a_missing_logo_mentions_the_registry_option(
+        self, real_render, capsys, short_track_gpx, tmp_path
+    ):
+        run(
+            str(short_track_gpx),
+            "--logo-marker",
+            "nope",
+            "--out",
+            str(tmp_path / "v.mp4"),
+        )
+        out = capsys.readouterr()
+        assert "--logo-registry" in out.out + out.err
+
+    def test_a_registry_logo_resolves_and_renders(
+        self, real_render, short_track_gpx, tmp_path, logo_png
+    ):
+        """A valid logo forges on: only the error paths fail early."""
+        logos = tmp_path / "logos"
+        logos.mkdir()
+        (logos / "registry.yaml").write_text(
+            "logos:\n  dot:\n    file: logo.png\n", encoding="utf-8"
+        )
+        (logos / "logo.png").write_bytes(logo_png.read_bytes())
+        rc = run(
+            str(short_track_gpx),
+            "--logo-registry",
+            str(logos / "registry.yaml"),
+            "--logo-start",
+            "dot",
+            "--out",
+            str(tmp_path / "v.mp4"),
+        )
+        assert rc == 0
+        assert real_render.calls == 1
+
+    def test_a_path_to_a_valid_logo_resolves_too(
+        self, real_render, short_track_gpx, tmp_path, logo_png
+    ):
+        """Bare paths are every bit as legal as registry names."""
+        rc = run(
+            str(short_track_gpx),
+            "--logo-end",
+            str(logo_png),
+            "--out",
+            str(tmp_path / "v.mp4"),
+        )
+        assert rc == 0
+        assert real_render.calls == 1
+
+
+class _FakeRenderer:
+    """A renderer that merely records whether it was asked to draw."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def render(self, config, track, out_dir):
+        self.calls += 1
+        return RenderResult(frame_dir=out_dir, frame_paths=(), frame_count=0)
 
 
 class TestConfigFromArgs:
