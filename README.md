@@ -109,9 +109,23 @@ uv run gpx-animate my_trip.gpx --size 9:16 \
 | `--logo-marker` | str | `None` | Logo that rides the moving head marker |
 | `--logo-registry` | path | `./logos/registry.yaml` | YAML registry mapping names to logo files |
 | `--margin` | float | `0.15` | Fractional margin around the track bounding box |
+| `--bounds` | str | — | Fixed view `min_lon,min_lat,max_lon,max_lat` in degrees; overrides `--margin` |
 | `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
 
 Total clip length = `duration + hold` (default **6 s**: 5 s drawing + 1 s hold).
+
+### Framing
+
+By default the view is the track's bounding box, padded by `--margin`. For a
+fixed window instead, give the four corners in degrees:
+
+```
+uv run gpx-animate my_trip.gpx --bounds 2.35,48.85,2.40,48.90
+```
+
+`--bounds` replaces the margin-derived view entirely (the track need not reach
+the frame edges), and is rejected up front if the corners are reversed or
+outside `[-180, 180]` × `[-90, 90]`.
 
 ### Logos
 
@@ -200,6 +214,7 @@ a config file or the environment.
 | `fps` | int | `30` | Frame rate for both phases |
 | `size` | str | `16:9` | `16:9`, `1:1` or `9:16` |
 | `margin` | float | `0.15` | Padding around the track bbox, as a fraction |
+| `bounds` | str | *(none)* | Fixed view `min_lon,min_lat,max_lon,max_lat`; wins over `margin` |
 | `out` | path | *(none)* | Output file; blank means "generate one" |
 | `output_dir` | path | `output` | Where the generated name goes |
 | `force` | bool | `false` | Overwrite `out` instead of suffixing it |

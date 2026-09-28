@@ -172,6 +172,33 @@ class TestBasemapPort:
         )
         assert basemap.calls[0]["bbox"] == expected
 
+    def test_explicit_bounds_replace_the_margin(self, track, tmp_path):
+        """--bounds fixes the view: the track's own extent is irrelevant, and
+        neither the margin nor the degenerate-track floor applies."""
+        window = Bbox(2.30, 48.80, 2.50, 49.00)
+        basemap = FakeBasemap()
+        MatplotlibRenderer(basemap, FakeLogoLoader()).render(
+            RenderConfig(
+                duration=0.2, hold=0.0, fps=5, dpi=20, margin=0.5, bounds=window
+            ),
+            track,
+            tmp_path,
+        )
+        transformer = pyproj.Transformer.from_crs(
+            "EPSG:4326", "EPSG:3857", always_xy=True
+        )
+        x, y = transformer.transform([2.30, 2.50], [48.80, 49.00])
+        x, y = np.asarray(x), np.asarray(y)
+        assert basemap.calls[0]["bbox"] == Bbox(x.min(), y.min(), x.max(), y.max())
+
+    def test_bounds_are_not_padded_even_with_a_large_margin(self, track, tmp_path):
+        """The margin is ignored entirely, not shrunk: both knobs are in the
+        same config and bounds wins outright."""
+        tight = self._view_for(
+            track, tmp_path, margin=0.1, bounds=Bbox(0.0, 0.0, 0.001, 0.001)
+        )
+        assert tight.width < 200
+
     def test_a_degenerate_track_still_gets_a_drawable_view(self, tmp_path):
         """margin=0 is no *extra* padding; a one-unit floor keeps it drawable."""
         dot = Track.from_rows([(7.0, 45.0, 100.0)], name="Dot")

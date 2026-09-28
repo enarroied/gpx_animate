@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from gpx_animate.config.defaults import default_config
+from gpx_animate.domain.bbox import Bbox
 from gpx_animate.domain.render_config import SIZE_PRESETS
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.style import DEFAULT_STYLE
@@ -39,6 +40,28 @@ class TestValidation:
     def test_negative_margin_is_rejected(self):
         with pytest.raises(ValueError, match="margin must be >= 0"):
             RenderConfig(margin=-0.1)
+
+    def test_bounds_default_to_none(self):
+        """No --bounds means the margin grows the track, as always."""
+        assert RenderConfig().bounds is None
+
+    def test_a_valid_window_is_accepted_and_kept(self):
+        box = Bbox(2.35, 48.85, 2.40, 48.90)
+        assert RenderConfig(bounds=box).bounds == box
+
+    def test_reversed_longitude_is_rejected(self):
+        with pytest.raises(ValueError, match="min < max"):
+            RenderConfig(bounds=Bbox(2.40, 48.85, 2.35, 48.90))
+
+    def test_a_latitude_past_the_poles_is_rejected(self):
+        with pytest.raises(ValueError, match="latitudes must be in"):
+            RenderConfig(bounds=Bbox(0.0, -90.1, 1.0, 90.1))
+
+    def test_replace_revalidates_the_window(self):
+        """dataclasses.replace re-runs __post_init__, so it cannot sneak a bad
+        box into an otherwise valid config."""
+        with pytest.raises(ValueError, match="longitudes must be in"):
+            replace(RenderConfig(), bounds=Bbox(0.0, 0.0, 181.0, 5.0))
 
     def test_unknown_size_is_rejected(self):
         with pytest.raises(ValueError, match="size must be one of"):

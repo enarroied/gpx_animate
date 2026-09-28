@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.bbox import validate_bounds
 from gpx_animate.domain.style import DEFAULT_STYLE
 from gpx_animate.domain.style import Style
 
@@ -39,6 +41,9 @@ class RenderConfig:
         size: Key into :data:`SIZE_PRESETS`.
         dpi: Resolution of the rendered frames.
         margin: Extra padding around the track bounding box, as a fraction.
+        bounds: Optional fixed ``(min_lon, min_lat, max_lon, max_lat)`` window,
+            in degrees. When set it replaces the margin-derived view entirely:
+            the render is framed to show exactly those bounds, nothing more.
         out: Destination file, or ``None`` to let the output resolver decide.
         output_dir: Directory for the generated name when ``out`` is ``None``.
         force: Overwrite an existing ``out`` instead of suffixing it.
@@ -63,6 +68,7 @@ class RenderConfig:
     size: str = "16:9"
     dpi: int = 150
     margin: float = 0.15
+    bounds: Bbox | None = None
     out: Path | None = None
     output_dir: Path = DEFAULT_OUTPUT_DIR
     force: bool = False
@@ -94,6 +100,8 @@ class RenderConfig:
             # reporting: resolving "" would look for a file with no name.
             if value is not None and not value.strip():
                 raise ValueError(f"{field} must be a name or a path, not empty")
+        if self.bounds is not None:
+            validate_bounds(self.bounds)
 
     @property
     def size_inches(self) -> tuple[float, float]:

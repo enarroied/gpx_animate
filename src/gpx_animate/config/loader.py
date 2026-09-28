@@ -30,6 +30,8 @@ from gpx_animate.config.defaults import default_config
 from gpx_animate.config.layers import APPEARANCE_GROUP
 from gpx_animate.config.layers import PROJECT_CONFIG_NAME
 from gpx_animate.config.layers import ConfigError
+from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.bbox import parse_bounds
 from gpx_animate.domain.render_config import RenderConfig
 
 
@@ -83,6 +85,17 @@ def _identity(value: Any) -> Any:
     return value
 
 
+def _to_bounds(value: Any) -> Bbox:
+    """Coerce a config value to a bounds box.
+
+    The value arrives as ``"min_lon,min_lat,max_lon,max_lat"`` in a file or the
+    environment, or already as a :class:`Bbox` from a programmatic caller.
+    """
+    if isinstance(value, Bbox):
+        return value
+    return parse_bounds(str(value))
+
+
 COERCERS: dict[str, Callable[[Any], Any]] = {
     "duration": float,
     "hold": float,
@@ -93,6 +106,7 @@ COERCERS: dict[str, Callable[[Any], Any]] = {
     "out": _to_optional_path,
     "output_dir": _to_path,
     "tiff": _to_optional_path,
+    "bounds": _to_bounds,
 }
 """How each non-string key is converted. Everything else is a string."""
 

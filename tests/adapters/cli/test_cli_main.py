@@ -18,6 +18,7 @@ from gpx_animate.application.use_cases.render_animation import (
 from gpx_animate.config import layers
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
+from gpx_animate.domain.bbox import Bbox
 from gpx_animate.domain.render_config import RenderConfig
 
 
@@ -173,6 +174,12 @@ class TestFlagPrecedence:
             ("--fps", "12", "fps", 12),
             ("--size", "9:16", "size", "9:16"),
             ("--margin", "0.4", "margin", 0.4),
+            (
+                "--bounds",
+                "2.35,48.85,2.40,48.90",
+                "bounds",
+                Bbox(2.35, 48.85, 2.40, 48.90),
+            ),
             ("--logo-start", "car", "logo_start", "car"),
             ("--logo-end", "/abs/x.png", "logo_end", "/abs/x.png"),
             ("--logo-marker", "walking_man", "logo_marker", "walking_man"),
@@ -227,6 +234,7 @@ class TestParser:
             "fps",
             "size",
             "margin",
+            "bounds",
             "out",
             "force",
             "logo_start",
@@ -302,6 +310,21 @@ class TestFailure:
             run(str(short_track_gpx), "--fps", "0", "--out", str(tmp_path / "v.mp4"))
             == 1
         )
+
+    def test_a_bad_bounds_exits_one_with_a_message(
+        self, recorder, short_track_gpx, tmp_path, capsys
+    ):
+        rc = run(
+            str(short_track_gpx),
+            "--bounds",
+            "2.35,91,2.40,92",
+            "--out",
+            str(tmp_path / "v.mp4"),
+        )
+        out = capsys.readouterr()
+        assert rc == 1
+        assert "bounds" in out.out + out.err
+        assert len(recorder.configs) == 0
 
 
 class TestLogoResolution:
@@ -412,6 +435,25 @@ class TestConfigFromArgs:
     def test_force_is_applied(self, short_track_gpx):
         args = cli.build_parser().parse_args([str(short_track_gpx), "--force"])
         assert cli.config_from_args(args).force is True
+
+    def test_bounds_are_parsed_into_a_box(self, short_track_gpx):
+        args = cli.build_parser().parse_args(
+            [str(short_track_gpx), "--bounds", "2.35,48.85,2.40,48.90"]
+        )
+        assert cli.config_from_args(args).bounds == Bbox(2.35, 48.85, 2.40, 48.90)
+
+    def test_a_bad_bounds_value_raises_here(self, short_track_gpx):
+        """config_from_args surfaces the parse error; main turns it into exit 1."""
+        args = cli.build_parser().parse_args(
+            [str(short_track_gpx), "--bounds", "1,2,3"]
+        )
+        with pytest.raises(ValueError, match="four numbers"):
+            cli.config_from_args(args)
+
+    def test_no_bounds_flag_keeps_the_base(self, short_track_gpx):
+        base = RenderConfig(bounds=Bbox(1.0, 2.0, 3.0, 4.0))
+        args = cli.build_parser().parse_args([str(short_track_gpx)])
+        assert cli.config_from_args(args, base).bounds == Bbox(1.0, 2.0, 3.0, 4.0)
 
     def test_force_keeps_the_layer_below_when_the_flag_is_absent(self, short_track_gpx):
         """store_true has to default to None, or a config file could not win."""

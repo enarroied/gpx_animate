@@ -10,6 +10,7 @@ from gpx_animate.config.layers import ConfigError
 from gpx_animate.config.loader import apply_overrides
 from gpx_animate.config.loader import coerce_overrides
 from gpx_animate.config.loader import load_config
+from gpx_animate.domain.bbox import Bbox
 from gpx_animate.domain.style import Style
 
 
@@ -81,6 +82,8 @@ class TestCoercion:
             ("force", "off", False),
             ("force", True, True),
             ("style", "osm", "osm"),
+            ("bounds", "2.35,48.85,2.40,48.90", Bbox(2.35, 48.85, 2.40, 48.90)),
+            ("bounds", Bbox(1.0, 2.0, 3.0, 4.0), Bbox(1.0, 2.0, 3.0, 4.0)),
         ],
     )
     def test_each_type_is_converted(self, key, raw, expected):
@@ -119,6 +122,16 @@ class TestCoercion:
         """Silently truncating 29.97 fps to 29 would be a nasty surprise."""
         with raises(ConfigError, match="fps"):
             coerce_overrides({"fps": "29.97"}, origin="test")
+
+    def test_a_bad_bounds_string_names_the_layer(self):
+        with raises(ConfigError, match="min_lon,min_lat,max_lon,max_lat"):
+            coerce_overrides({"bounds": "1,2,3"}, origin="~/config.toml")
+
+    def test_a_reversed_bounds_box_is_rejected_here_too(self):
+        """The coercer returns a box, so the config's own check would also fire;
+        but the ConfigError wrapping happens here, naming the source."""
+        with raises(ConfigError, match="min < max"):
+            coerce_overrides({"bounds": "2.40,48.85,2.35,48.90"}, origin="test")
 
 
 class TestApplyOverrides:

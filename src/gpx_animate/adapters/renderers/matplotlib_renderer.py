@@ -55,6 +55,29 @@ LOGO_ZORDER = 10
 half-hidden behind the line it is annotating."""
 
 
+def _projected_bounds(bounds: Bbox, transformer) -> Bbox:
+    """Move a ``--bounds`` window from degrees into the render's projection.
+
+    Web Mercator maps degrees monotonicly onto x and y (no dateline-crossing
+    wrapping within the validated ``[-180, 180]`` window), so projecting just
+    the two corners and reframing with min/max of the results gives the same
+    box the track would have if it filled the window.
+
+    Args:
+        bounds: The requested view, in WGS84 degrees.
+        transformer: pyproj transformer from EPSG:4326 to the projection the
+            track is already drawn in.
+
+    Returns:
+        The same window, in projected units, unpadded.
+    """
+    x, y = transformer.transform(
+        [bounds.min_x, bounds.max_x], [bounds.min_y, bounds.max_y]
+    )
+    x, y = np.asarray(x), np.asarray(y)
+    return Bbox(x.min(), y.min(), x.max(), y.max())
+
+
 def _side_offsets(
     side_x: str, side_y: str, width: float, height: float
 ) -> tuple[float, float, float, float]:
@@ -163,7 +186,12 @@ class MatplotlibRenderer:
         # Bounds with padding. A degenerate track (a single point, or a straight
         # east-west line) has zero extent on one axis; Bbox.padded falls back to
         # a one-unit pad there so the view is still drawable.
-        view = Bbox(X.min(), Y.min(), X.max(), Y.max()).padded(config.margin)
+        if config.bounds is not None:
+            # The user fixed the view, so the track's own extent and any margin
+            # are irrelevant: show exactly the requested window.
+            view = _projected_bounds(config.bounds, transformer)
+        else:
+            view = Bbox(X.min(), Y.min(), X.max(), Y.max()).padded(config.margin)
         ax.set_xlim(view.min_x, view.max_x)
         ax.set_ylim(view.min_y, view.max_y)
 

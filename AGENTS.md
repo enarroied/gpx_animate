@@ -158,9 +158,17 @@ work-in-progress edits. Same reason: any user-visible change updates
   `force = true` in a config file could never win. Same trap applies to any future
   on/off flag.
 - `RenderConfig` rejects `fps <= 0`, `duration <= 0`, `hold < 0`, `dpi <= 0`,
-  `margin < 0`, unknown `size`, empty `logo_start`/`logo_end`/`logo_marker` at
-  construction, so the CLI turns those into exit code 1 instead of a confusing
-  render failure.
+  `margin < 0`, unknown `size`, empty `logo_start`/`logo_end`/`logo_marker`, and
+  a `bounds` box that fails `domain/bbox.validate_bounds` at construction, so the
+  CLI turns those into exit code 1 instead of a confusing render failure.
+- `--bounds` is a **string flag parsed late**, not an argparse `type=`. Parsing
+  in `parse_bounds` (domain) keeps the ValueError message flowing through main's
+  exit-code-1 path and lets the same coercion serve config files and the
+  environment via the `COERCERS` table's `_to_bounds`. The flag arrives as text
+  because config_from_args applies only flags over the layered base — the
+  COERCERS do not run for flags — so `config_from_args` re-parses `bounds` by
+  hand. `bounds` replaces the padded view entirely in the renderer, margin and
+  the one-unit degenerate floor included.
 - Frame count is `int(duration*fps) + int(hold*fps)` and the truncation is
   intentional: a sub-frame phase disappears and the clip can come out shorter
   than `duration + hold`. Hold frames reuse the final state, so they are
@@ -263,10 +271,11 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS US-7 boundary control, US-8 PyQt GUI, US-10 GIF export: **not
-  implemented**. Don't write code or docs as if they exist. US-5 (logo registry)
-  and US-6 are implemented as of M5 — `--logo-start|end|marker` plus
-  `--logo-registry`, and `--tiff` / `--style none` are real CLI options.
+- SPECS US-8 PyQt GUI, US-10 GIF export: **not** implemented. Don't write code
+  or docs as if they exist. US-5 (logo registry), US-6 (basemap abstraction)
+  and US-7 (boundary control) are implemented as of M6 — `--logo-start|end|marker`
+  plus `--logo-registry`, `--tiff` / `--style none`, and `--bounds`
+  (`--margin` and `--bounds` are both live `RenderConfig` fields).
 
 ## Conventions (SPECS §6 — binding)
 

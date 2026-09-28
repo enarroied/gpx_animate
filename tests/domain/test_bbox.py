@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 
 from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.bbox import parse_bounds
+from gpx_animate.domain.bbox import validate_bounds
 
 
 class TestRepr:
@@ -116,3 +118,57 @@ class TestPadded:
         once = Bbox(0.0, 0.0, 10.0, 10.0).padded(0.1)
         assert once.width == pytest.approx(12.0)
         assert once.padded(0.1).width == pytest.approx(14.4)
+
+
+class TestParseBounds:
+    """The ``--bounds`` "min_lon,min_lat,max_lon,max_lat" parsing and rejection."""
+
+    def test_parses_four_numbers_into_a_box(self):
+        assert parse_bounds("2.35,48.85,2.40,48.90") == Bbox(2.35, 48.85, 2.40, 48.90)
+
+    def test_fractional_and_negative_degrees_are_fine(self):
+        assert parse_bounds("-1.5,-0.25,2,3.5") == Bbox(-1.5, -0.25, 2.0, 3.5)
+
+    def test_rejects_too_few_numbers(self):
+        with pytest.raises(ValueError, match="four numbers"):
+            parse_bounds("2.35,48.85,2.40")
+
+    def test_rejects_too_many_numbers(self):
+        with pytest.raises(ValueError, match="four numbers"):
+            parse_bounds("1,2,3,4,5")
+
+    def test_rejects_garbage(self):
+        with pytest.raises(ValueError, match="four comma-separated numbers"):
+            parse_bounds("a,b,c,d")
+
+    def test_rejects_an_empty_string(self):
+        with pytest.raises(ValueError, match="four comma-separated numbers"):
+            parse_bounds("")
+
+    def test_rejects_reversed_longitude(self):
+        with pytest.raises(ValueError, match="min < max"):
+            parse_bounds("2.40,48.85,2.35,48.90")
+
+    def test_rejects_reversed_latitude(self):
+        with pytest.raises(ValueError, match="min < max"):
+            parse_bounds("2.35,48.90,2.40,48.85")
+
+    def test_rejects_a_latitude_past_the_poles(self):
+        with pytest.raises(ValueError, match="latitudes must be in"):
+            parse_bounds("2.35,91,2.40,92")
+
+    def test_rejects_a_longitude_past_the_antimeridian(self):
+        with pytest.raises(ValueError, match="longitudes must be in"):
+            parse_bounds("181,48.85,182,48.90")
+
+    def test_an_edge_at_the_extreme_is_accepted(self):
+        assert parse_bounds("-180,-90,180,90") == Bbox(-180.0, -90.0, 180.0, 90.0)
+
+
+class TestValidateBounds:
+    def test_accepts_a_sensible_window(self):
+        validate_bounds(Bbox(2.35, 48.85, 2.40, 48.90))
+
+    def test_rejects_an_unordered_edge(self):
+        with pytest.raises(ValueError, match="min < max"):
+            validate_bounds(Bbox(10.0, 0.0, -10.0, 5.0))

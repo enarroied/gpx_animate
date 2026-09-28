@@ -33,6 +33,7 @@ from gpx_animate.application.use_cases.resolve_output import resolve_output_path
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
 from gpx_animate.config.loader import load_config
+from gpx_animate.domain.bbox import parse_bounds
 from gpx_animate.domain.render_config import RenderConfig
 
 
@@ -75,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--margin",
         type=float,
         help="extra padding around the track, as a fraction of its extent",
+    )
+    parser.add_argument(
+        "--bounds",
+        metavar="MIN_LON,MIN_LAT,MAX_LON,MAX_LAT",
+        help="fixed view in degrees; overrides --margin",
     )
     parser.add_argument(
         "--out",
@@ -145,6 +151,7 @@ def config_from_args(
             "fps",
             "size",
             "margin",
+            "bounds",
             "out",
             "force",
             "logo_start",
@@ -153,6 +160,11 @@ def config_from_args(
         )
         if getattr(args, field, None) is not None
     }
+    if "bounds" in overrides:
+        # The flag arrives as "min_lon,min_lat,max_lon,max_lat" and the domain
+        # wants a box; the config-file layers coerce through the COERCERS table,
+        # but flags bypass it, so the same parse happens here.
+        overrides["bounds"] = parse_bounds(overrides["bounds"])
     return dataclasses.replace(base or default_config(), **overrides)
 
 

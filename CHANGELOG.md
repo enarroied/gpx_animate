@@ -46,6 +46,11 @@ Nothing has been released yet. Current state of the project:
   `output_dir`, `dpi` and the `appearance.*` colours, which have no flags. An unknown key
   in a file or a stray `GPX_ANIMATE_*` variable is reported at startup with the list of
   valid keys instead of being ignored.
+- New: `--bounds min_lon,min_lat,max_lon,max_lat` pins the view to a fixed
+  window in degrees, overriding `--margin` and the default track-bound padding.
+  Invalid corners (reversed edges, or longitudes/latitudes outside the spheroid)
+  are rejected up front with exit code 1. `bounds` is also settable in config
+  files and the environment.
 - New: `--logo-start`, `--logo-end` and `--logo-marker` place a PNG at the trip's start
   point, end point and moving head. Each source is a path to an image or a name from the
   logo registry (default `./logos/registry.yaml`, overridable with `--logo-registry`).

@@ -130,3 +130,69 @@ class Bbox(NamedTuple):
             self.max_x + pad_x,
             self.max_y + pad_y,
         )
+
+
+def validate_bounds(bounds: Bbox) -> None:
+    """Raise if a box is not a valid lon/lat window for ``--bounds``.
+
+    Bounds arrive as ``min_lon,min_lat,max_lon,max_lat``, degrees of WGS84.
+    Both the parser and :class:`~gpx_animate.domain.render_config.RenderConfig`
+    check here, so a programmatic call and a parsed flag reject the same boxes.
+    A box rejected here is also one that cannot be projected sanely: a latitude
+    beyond 90 or longitude beyond 180 does not exist on the spheroid, and a
+    reversed edge would project to a valid but empty-looking view.
+
+    Args:
+        bounds: The box to check. Left untouched.
+
+    Raises:
+        ValueError: If a longitude is outside ``[-180, 180]``, a latitude
+            outside ``[-90, 90]``, or an edge is not ordered min < max.
+    """
+    if not (-180 <= bounds.min_x <= 180 and -180 <= bounds.max_x <= 180):
+        raise ValueError(
+            f"bounds longitudes must be in [-180, 180], got {bounds.min_x}, "
+            f"{bounds.max_x}"
+        )
+    if not (-90 <= bounds.min_y <= 90 and -90 <= bounds.max_y <= 90):
+        raise ValueError(
+            f"bounds latitudes must be in [-90, 90], got {bounds.min_y}, {bounds.max_y}"
+        )
+    if bounds.min_x >= bounds.max_x or bounds.min_y >= bounds.max_y:
+        raise ValueError(f"bounds must have min < max on both axes, got {bounds}")
+
+
+def parse_bounds(text: str) -> Bbox:
+    """Parse a ``--bounds`` value into a validated box.
+
+    The argument is the ``min_lon,min_lat,max_lon,max_lat`` of the flag, four
+    comma-separated degrees that fix the view instead of letting the margin pad
+    the track. Parsing is a pure string-to-box function rather than argparse
+    glue so the same value works in a config file and the environment, and so
+    the error is a :exc:`ValueError` the CLI turns into exit code 1 like every
+    other bad knob.
+
+    Args:
+        text: Four comma-separated numbers, e.g. ``"2.35,48.85,2.40,48.90"``.
+
+    Returns:
+        The box, validated by :func:`validate_bounds`.
+
+    Raises:
+        ValueError: If there are not four numbers, or the box fails
+            :func:`validate_bounds`.
+    """
+    try:
+        values = [float(part) for part in text.split(",")]
+    except ValueError as error:
+        raise ValueError(
+            f"bounds must be four comma-separated numbers, got {text!r}"
+        ) from error
+    if len(values) != 4:
+        raise ValueError(
+            f"bounds must be four numbers (min_lon,min_lat,max_lon,max_lat), "
+            f"got {len(values)}: {text!r}"
+        )
+    bounds = Bbox(*values)
+    validate_bounds(bounds)
+    return bounds
