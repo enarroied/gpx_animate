@@ -1,0 +1,8 @@
+# Name-to-logo resolution for --logo-start|end|marker.
+# "car" -> logos/Car-3--Streamline-Ultimate.png, 96 device px wide, centred on
+# the anchor point. default_size_px is the *width*; height follows the image.
+logos:
+  car:
+    file: Car-3--Streamline-Ultimate.png
+    anchor: center
+    default_size_px: 96
