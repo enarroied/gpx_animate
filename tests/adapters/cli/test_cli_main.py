@@ -183,6 +183,7 @@ class TestFlagPrecedence:
             ("--logo-start", "car", "logo_start", "car"),
             ("--logo-end", "/abs/x.png", "logo_end", "/abs/x.png"),
             ("--logo-marker", "walking_man", "logo_marker", "walking_man"),
+            ("--logo-size", "192", "logo_size_px", 192),
         ],
     )
     def test_each_flag_reaches_the_config(
@@ -240,6 +241,7 @@ class TestParser:
             "logo_start",
             "logo_end",
             "logo_marker",
+            "logo_size",
             "logo_registry",
             "log_level",
         }
@@ -454,6 +456,18 @@ class TestConfigFromArgs:
         base = RenderConfig(bounds=Bbox(1.0, 2.0, 3.0, 4.0))
         args = cli.build_parser().parse_args([str(short_track_gpx)])
         assert cli.config_from_args(args, base).bounds == Bbox(1.0, 2.0, 3.0, 4.0)
+
+    def test_logo_size_is_remapped_to_logo_size_px(self, short_track_gpx):
+        """The flag says --logo-size; the domain field records the pixels."""
+        args = cli.build_parser().parse_args(
+            [str(short_track_gpx), "--logo-size", "192"]
+        )
+        assert cli.config_from_args(args).logo_size_px == 192
+
+    def test_no_logo_size_flag_keeps_the_base(self, short_track_gpx):
+        base = RenderConfig(logo_size_px=100)
+        args = cli.build_parser().parse_args([str(short_track_gpx)])
+        assert cli.config_from_args(args, base).logo_size_px == 100
 
     def test_force_keeps_the_layer_below_when_the_flag_is_absent(self, short_track_gpx):
         """store_true has to default to None, or a config file could not win."""

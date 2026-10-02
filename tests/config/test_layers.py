@@ -132,6 +132,11 @@ class TestReadEnvLayer:
             ("GPX_ANIMATE_DURATION", "2.5", {"duration": "2.5"}),
             ("GPX_ANIMATE_LOGO_START", "car", {"logo_start": "car"}),
             (
+                "GPX_ANIMATE_LOGO_SIZE_PX",
+                "192",
+                {"logo_size_px": "192"},
+            ),
+            (
                 "GPX_ANIMATE_BOUNDS",
                 "2.35,48.85,2.40,48.90",
                 {"bounds": "2.35,48.85,2.40,48.90"},

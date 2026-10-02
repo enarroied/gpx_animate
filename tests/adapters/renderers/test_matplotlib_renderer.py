@@ -16,9 +16,19 @@ from fakes import FakeLogoLoader  # noqa: E402
 
 from gpx_animate.adapters.basemaps.none import BlankBasemap  # noqa: E402
 from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
+    LOGO_BACKPLATE_PAD_FRACTION,
+)
+from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
+    LOGO_BACKPLATE_ZORDER,
+)
+from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
     MatplotlibRenderer,
 )
+from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
+    _has_visible_pixels,
+)
 from gpx_animate.adapters.renderers.matplotlib_renderer import _logo_box  # noqa: E402
+from gpx_animate.adapters.renderers.matplotlib_renderer import _logo_plate  # noqa: E402
 from gpx_animate.adapters.renderers.matplotlib_renderer import (  # noqa: E402
     _side_offsets,
 )
@@ -524,6 +534,20 @@ class TestLogoSizing:
         frame = _render_frame(track, tmp_path, config, size_px=80)
         assert _red_width(frame) == pytest.approx(80, abs=1)
 
+    def test_logo_size_px_overrides_the_resolved_size(self, track, tmp_path):
+        """--logo-size wins over the size the loader resolved (registry/48)."""
+        config = RenderConfig(
+            duration=0.2,
+            hold=0.0,
+            fps=5,
+            dpi=100,
+            size="1:1",
+            logo_start="car",
+            logo_size_px=80,
+        )
+        frame = _render_frame(track, tmp_path, config, size_px=40)
+        assert _red_width(frame) == pytest.approx(80, abs=1)
+
 
 def _render_frame(track, tmp_path, config, *, size_px) -> np.ndarray:
     """Render one frame with a red square logo of a known width."""
@@ -561,3 +585,174 @@ class TestHud:
         first = frames(config, short, tmp_path / "a", renderer)[0]
         second = frames(config, long, tmp_path / "b", renderer)[0]
         assert not np.array_equal(plt.imread(first), plt.imread(second))
+
+
+def _three_logos_config(**kwargs) -> RenderConfig:
+    """A config asking for a logo at every placement, spelled out for ty."""
+    return RenderConfig(
+        duration=0.2,
+        hold=0.0,
+        fps=5,
+        dpi=20,
+        logo_start="a",
+        logo_end="b",
+        logo_marker="c",
+        **kwargs,
+    )
+
+
+def _black_square() -> np.ndarray:
+    """Opaque black, so it is only visible against a white plate."""
+    square = np.zeros((8, 8, 4), dtype=float)
+    square[..., 3] = 1.0
+    return square
+
+
+class TestLogoBackplate:
+    """Every visible logo sits on a white rounded plate, which travels with the
+    marker logo; a fully transparent logo draws nothing at all."""
+
+    def test_the_plate_is_a_white_rounded_patch_under_the_logo(self):
+        patch = _logo_plate((0.0, 10.0, 0.0, 20.0), (1.0, 1.0), 72)
+        assert patch.get_facecolor() == pytest.approx((1.0, 1.0, 1.0, 1.0))
+        assert patch.get_zorder() == LOGO_BACKPLATE_ZORDER
+        assert (patch.get_x(), patch.get_y()) == pytest.approx((-1.0, -2.0))
+        assert (patch.get_width(), patch.get_height()) == pytest.approx((12.0, 24.0))
+
+    def test_each_visible_placement_gets_a_plate(self):
+        renderer = MatplotlibRenderer(FakeBasemap(), FakeLogoLoader(size_px=40))
+        fig, ax = plt.subplots()
+        try:
+            renderer._draw_logos(
+                ax,
+                _three_logos_config(),
+                np.array([0.0, 5.0]),
+                np.array([0.0, 5.0]),
+                VIEW,
+                fig,
+            )
+            fig.canvas.draw()
+            assert len(ax.patches) == 3
+            assert len(ax.images) == 3
+            for patch, image in zip(ax.patches, ax.images, strict=True):
+                assert patch.get_zorder() < image.get_zorder()
+                extent = image.get_extent()
+                x, y = patch.get_x(), patch.get_y()  # ty: ignore[unresolved-attribute]
+                width, height = patch.get_width(), patch.get_height()  # ty: ignore[unresolved-attribute]
+                assert x < extent[0] and x + width > extent[1]
+                assert y < extent[2] and y + height > extent[3]
+                assert width == pytest.approx(
+                    (extent[1] - extent[0]) * (1 + 2 * LOGO_BACKPLATE_PAD_FRACTION)
+                )
+                assert height == pytest.approx(
+                    (extent[3] - extent[2]) * (1 + 2 * LOGO_BACKPLATE_PAD_FRACTION)
+                )
+        finally:
+            plt.close(fig)
+
+    def test_logo_size_px_resizes_every_placement(self):
+        """One setting overrides the loader's size at start, end and marker."""
+        renderer = MatplotlibRenderer(FakeBasemap(), FakeLogoLoader(size_px=40))
+        fig, ax = plt.subplots()
+        try:
+            renderer._draw_logos(
+                ax,
+                _three_logos_config(logo_size_px=60),
+                np.array([0.0, 5.0]),
+                np.array([0.0, 5.0]),
+                VIEW,
+                fig,
+            )
+            fig.canvas.draw()
+            units_x = (VIEW.max_x - VIEW.min_x) / ax.get_window_extent().width
+            for image in ax.images:
+                assert image.get_extent()[1] - image.get_extent()[0] == pytest.approx(
+                    60 * units_x
+                )
+        finally:
+            plt.close(fig)
+
+    def test_the_marker_plate_follows_the_head(self):
+        renderer = MatplotlibRenderer(FakeBasemap(), FakeLogoLoader(size_px=40))
+        fig, ax = plt.subplots()
+        try:
+            mover = renderer._draw_logos(
+                ax,
+                _three_logos_config(),
+                np.array([0.0, 5.0]),
+                np.array([0.0, 5.0]),
+                VIEW,
+                fig,
+            )
+            fig.canvas.draw()
+            assert mover is not None
+            mover(7.0, 9.0)
+            image, plate = ax.images[2], ax.patches[2]
+            extent = image.get_extent()
+            assert (extent[0] + extent[1]) / 2 == pytest.approx(7.0)
+            assert (extent[2] + extent[3]) / 2 == pytest.approx(9.0)
+            x, y = plate.get_x(), plate.get_y()  # ty: ignore[unresolved-attribute]
+            width, height = plate.get_width(), plate.get_height()  # ty: ignore[unresolved-attribute]
+            assert x < extent[0] and y < extent[2]
+            assert x + width > extent[1] and y + height > extent[3]
+        finally:
+            plt.close(fig)
+
+    def test_a_transparent_logo_gets_no_plate_no_image_and_no_mover(self):
+        renderer = MatplotlibRenderer(
+            FakeBasemap(), FakeLogoLoader(np.zeros((4, 4, 4)))
+        )
+        fig, ax = plt.subplots()
+        try:
+            mover = renderer._draw_logos(
+                ax,
+                _three_logos_config(),
+                np.array([0.0, 5.0]),
+                np.array([0.0, 5.0]),
+                VIEW,
+                fig,
+            )
+            assert mover is None
+            assert len(ax.images) == 0
+            assert len(ax.patches) == 0
+        finally:
+            plt.close(fig)
+
+    def test_the_white_plate_reaches_the_pixels(self, track, tmp_path):
+        """On a dark background the plate must actually print white."""
+        appearance = dataclasses.replace(DEFAULT_STYLE, bg_color="#101010")
+        config = RenderConfig(
+            duration=0.2,
+            hold=0.0,
+            fps=5,
+            dpi=40,
+            size="1:1",
+            style="none",
+            margin=0.15,
+            appearance=appearance,
+            logo_start="car",
+            logo_size_px=40,
+        )
+        renderer = MatplotlibRenderer(
+            BlankBasemap(color=config.appearance.bg_color),
+            FakeLogoLoader(_black_square(), size_px=40),
+        )
+        frame = plt.imread(renderer.render(config, track, tmp_path).frame_paths[0])
+        black = np.all(frame[..., :3] < 0.03, axis=-1)
+        ys, xs = np.where(black)
+        assert len(xs) > 0
+        x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+        width = x1 - x0 + 1
+        pad_px = int(round(LOGO_BACKPLATE_PAD_FRACTION * width / 2))
+        mid_y = (y0 + y1) // 2
+        assert np.all(frame[mid_y, x1 + pad_px, :3] > 0.85)
+        assert np.all(frame[mid_y, x1 + 4 * pad_px, :3] < 0.4)
+
+    def test_opacity_detection(self):
+        rgb = np.zeros((2, 2, 3))
+        transparent = np.zeros((2, 2, 4))
+        mostly = np.zeros((2, 2, 4))
+        mostly[0, 0, 3] = 0.5
+        assert _has_visible_pixels(rgb)
+        assert not _has_visible_pixels(transparent)
+        assert _has_visible_pixels(mostly)

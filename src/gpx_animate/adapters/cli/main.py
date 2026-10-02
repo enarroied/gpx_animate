@@ -109,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="logo drawn on the head of the growing line, moving with it",
     )
     parser.add_argument(
+        "--logo-size",
+        type=int,
+        metavar="PX",
+        help="override logo width in device pixels, for every placement",
+    )
+    parser.add_argument(
         "--logo-registry",
         type=Path,
         metavar="PATH",
@@ -157,6 +163,7 @@ def config_from_args(
             "logo_start",
             "logo_end",
             "logo_marker",
+            "logo_size",
         )
         if getattr(args, field, None) is not None
     }
@@ -165,6 +172,10 @@ def config_from_args(
         # wants a box; the config-file layers coerce through the COERCERS table,
         # but flags bypass it, so the same parse happens here.
         overrides["bounds"] = parse_bounds(overrides["bounds"])
+    if "logo_size" in overrides:
+        # The flag is "logo_size" while the domain field records the pixels the
+        # size names, so the flag is remapped before it reaches the dataclass.
+        overrides["logo_size_px"] = overrides.pop("logo_size")
     return dataclasses.replace(base or default_config(), **overrides)
 
 

@@ -102,6 +102,7 @@ COERCERS: dict[str, Callable[[Any], Any]] = {
     "margin": float,
     "fps": int,
     "dpi": int,
+    "logo_size_px": int,
     "force": _to_bool,
     "out": _to_optional_path,
     "output_dir": _to_path,

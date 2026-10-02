@@ -92,6 +92,19 @@ class TestValidation:
     def test_logo_sources_default_to_none(self, field):
         assert getattr(RenderConfig(), field) is None
 
+    def test_logo_size_px_defaults_to_none(self):
+        """No override means the resolved size (registry or 48-px) is used."""
+        assert RenderConfig().logo_size_px is None
+
+    def test_logo_size_px_must_be_positive(self):
+        with pytest.raises(ValueError, match="logo_size_px must be > 0"):
+            RenderConfig(logo_size_px=0)
+        with pytest.raises(ValueError, match="logo_size_px must be > 0"):
+            RenderConfig(logo_size_px=-24)
+
+    def test_a_positive_logo_size_is_accepted(self):
+        assert RenderConfig(logo_size_px=192).logo_size_px == 192
+
     def test_is_frozen(self):
         config = RenderConfig()
         with pytest.raises(AttributeError):
@@ -141,6 +154,7 @@ class TestDefaults:
         assert config.logo_start is None
         assert config.logo_end is None
         assert config.logo_marker is None
+        assert config.logo_size_px is None
         assert config.appearance is DEFAULT_STYLE
 
     def test_default_appearance_is_the_previous_palette(self):

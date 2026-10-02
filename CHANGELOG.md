@@ -58,5 +58,9 @@ Nothing has been released yet. Current state of the project:
   y" (`left|center|right` × `above|center|below`). **The corner `--logo` and
   `--logo-position` flags are gone**, replaced by the three point-anchored flags; the same
   three fields replace `logo` / `logo_position` in config files and the environment.
-- Specified in `SPECS.md` but not implemented: boundary flags (US-7), PyQt GUI (US-8), GIF
-  export (US-10).
+- New: `--logo-size <px>` overrides the width of every logo placement in one render
+  (registry sizes describe a logo, the flag describes a render), and every visible logo now
+  sits on a rounded white backplate so it reads over a busy basemap. A fully transparent
+  image still draws nothing. `logo_size_px` is settable in config files and the
+  environment too.
+- Specified in `SPECS.md` but not implemented: PyQt GUI (US-8), GIF export (US-10).

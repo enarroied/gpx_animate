@@ -107,6 +107,7 @@ uv run gpx-animate my_trip.gpx --size 9:16 \
 | `--logo-start` | str | `None` | Logo at the start point: a registry name or an image path |
 | `--logo-end` | str | `None` | Logo at the end point, same resolution |
 | `--logo-marker` | str | `None` | Logo that rides the moving head marker |
+| `--logo-size` | int | — | Override logo width in device pixels, for every placement |
 | `--logo-registry` | path | `./logos/registry.yaml` | YAML registry mapping names to logo files |
 | `--margin` | float | `0.15` | Fractional margin around the track bounding box |
 | `--bounds` | str | — | Fixed view `min_lon,min_lat,max_lon,max_lat` in degrees; overrides `--margin` |
@@ -148,6 +149,16 @@ logos:
 Anchors are named as *side on x* and *side on y* from `left`, `center`, `right`
 and `above`, `center`, `below`. The image keeps its aspect; `default_size_px`
 is the width.
+
+Every visible logo sits on a rounded white plate so it reads even over busy
+terrain. `--logo-size <px>` overrides the size for **all** placements at once
+(registry sizes describe the logo, the flag describes one render):
+
+```
+uv run gpx-animate my_trip.gpx --logo-marker car --logo-size 192
+```
+
+A fully transparent image draws nothing at all.
 
 ### Where the video goes
 
@@ -221,6 +232,7 @@ a config file or the environment.
 | `logo_start` | str | *(none)* | Logo at the start point: a registry name or a path |
 | `logo_end` | str | *(none)* | Logo at the end point, same resolution |
 | `logo_marker` | str | *(none)* | Logo that rides the moving head marker |
+| `logo_size_px` | int | *(none)* | Override logo width in device pixels, for every placement |
 | `appearance.bg_color` | str | `#f5f5f2` | Figure background |
 | `appearance.track_faint` | str | `#b8b8b8` | The whole track, before it is drawn |
 | `appearance.track_bright` | str | `#e63946` | The part drawn so far |

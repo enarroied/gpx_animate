@@ -12,6 +12,7 @@ decides where it goes and who has to be credited for it.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +21,7 @@ import matplotlib
 import numpy as np
 import pyproj
 from matplotlib import patheffects
+from matplotlib.patches import FancyBboxPatch
 
 
 matplotlib.use("Agg")
@@ -53,6 +55,88 @@ before the basemap port existed, so the frames do not shift.
 LOGO_ZORDER = 10
 """Draw order for logos. Above the track and the head marker, so a logo is never
 half-hidden behind the line it is annotating."""
+
+LOGO_BACKPLATE_ZORDER = LOGO_ZORDER - 1
+"""Draw order for a logo's white plate. Between the marker at 5 and the logo
+itself at 10, so the plate covers the line but never the logo it frames."""
+
+LOGO_BACKPLATE_PAD_FRACTION = 0.1
+"""How much white the plate adds around a logo, as a fraction of each side.
+
+The pad has to scale with the logo rather than be a fixed pixel count, or a
+192-px badge would carry the same 2-px border as a 24-px one."""
+
+
+def _has_visible_pixels(image: np.ndarray) -> bool:
+    """Whether a logo image has any opaque pixel to draw.
+
+    A fully transparent image would contribute nothing but would, if it were
+    given a plate, print a white blob over the map. An RGB image has no alpha
+    to be empty, so it is always visible.
+
+    Args:
+        image: The RGBA (or RGB) pixel buffer of a resolved logo.
+
+    Returns:
+        True if any pixel is opaque, or the image has no alpha channel.
+    """
+    return image.shape[2] < 4 or bool(np.any(image[..., 3] > 0))
+
+
+def _plate_bounds(
+    box: tuple[float, float, float, float],
+) -> tuple[float, float, float, float]:
+    """Inflate a logo box by the backplate pad, as ``(x, y, width, height)``.
+
+    Args:
+        box: The logo's ``(min_x, max_x, min_y, max_y)`` extent.
+
+    Returns:
+        The plate's ``(x, y, width, height)``, x/y being the lower-left corner.
+    """
+    x0, x1, y0, y1 = box
+    width = x1 - x0
+    height = y1 - y0
+    pad_x = LOGO_BACKPLATE_PAD_FRACTION * width
+    pad_y = LOGO_BACKPLATE_PAD_FRACTION * height
+    return x0 - pad_x, y0 - pad_y, width + 2 * pad_x, height + 2 * pad_y
+
+
+def _logo_plate(
+    box: tuple[float, float, float, float],
+    units_per_px: tuple[float, float],
+    dpi: int,
+) -> FancyBboxPatch:
+    """The rounded white plate shown behind a positioned logo.
+
+    The corner radius is a fraction of the smaller side, in points, so the
+    plate stays readable however the logo is sized.
+
+    Args:
+        box: The logo's ``(min_x, max_x, min_y, max_y)`` extent.
+        units_per_px: ``(x, y)`` data units per device pixel.
+        dpi: Figure dpi, to turn a pixel radius into points.
+
+    Returns:
+        An unstyled white patch ready to be added to the axes.
+    """
+    x, y, width, height = _plate_bounds(box)
+    radius_pts = (
+        LOGO_BACKPLATE_PAD_FRACTION
+        * min(width / units_per_px[0], height / units_per_px[1])
+        * 72.0
+        / dpi
+    )
+    return FancyBboxPatch(
+        (x, y),
+        width,
+        height,
+        boxstyle=f"round,pad={radius_pts:.3f}",
+        mutation_scale=1,
+        facecolor="white",
+        edgecolor="none",
+        zorder=LOGO_BACKPLATE_ZORDER,
+    )
 
 
 def _projected_bounds(bounds: Bbox, transformer) -> Bbox:
@@ -364,6 +448,12 @@ class MatplotlibRenderer:
         logos = {key: self.logos.resolve(src) for key, src in wanted.items() if src}
         if not logos:
             return None
+        if config.logo_size_px is not None:
+            # One --logo-size overrides every placement's resolved size.
+            logos = {
+                key: dataclasses.replace(logo, size_px=config.logo_size_px)
+                for key, logo in logos.items()
+            }
 
         fig.canvas.draw()
         box = axes.get_window_extent()
@@ -374,11 +464,13 @@ class MatplotlibRenderer:
 
         for key, x, y in (("start", xs[0], ys[0]), ("end", xs[-1], ys[-1])):
             logo = logos.get(key)
-            if logo is None:
+            if logo is None or not _has_visible_pixels(logo.image):
                 continue
+            logo_box = _logo_box(logo, x, y, units_per_px)
+            axes.add_patch(_logo_plate(logo_box, units_per_px, config.dpi))
             axes.imshow(
                 logo.image,
-                extent=_logo_box(logo, x, y, units_per_px),
+                extent=logo_box,
                 aspect="auto",
                 origin="upper",
                 zorder=LOGO_ZORDER,
@@ -387,17 +479,27 @@ class MatplotlibRenderer:
 
         move_marker: Callable[[float, float], None] | None = None
         moving = logos.get("marker")
-        if moving is not None:
+        if moving is not None and _has_visible_pixels(moving.image):
+            initial = _logo_box(moving, xs[0], ys[0], units_per_px)
+            plate = _logo_plate(initial, units_per_px, config.dpi)
+            axes.add_patch(plate)
             image = axes.imshow(
                 moving.image,
-                extent=_logo_box(moving, xs[0], ys[0], units_per_px),
+                extent=initial,
                 aspect="auto",
                 origin="upper",
                 zorder=LOGO_ZORDER,
             )
 
-            def move_marker(x: float, y: float, image: AxesImage = image) -> None:
-                image.set_extent(_logo_box(moving, x, y, units_per_px))
+            def move_marker(
+                x: float,
+                y: float,
+                image: AxesImage = image,
+                plate: FancyBboxPatch = plate,
+            ) -> None:
+                logo_box = _logo_box(moving, x, y, units_per_px)
+                image.set_extent(logo_box)
+                plate.set_bounds(*_plate_bounds(logo_box))
 
         # imshow resizes the view to whatever it drew, so put the frame back.
         # A logo on the last point legitimately hangs outside the view and must

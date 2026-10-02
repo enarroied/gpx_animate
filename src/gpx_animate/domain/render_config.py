@@ -52,6 +52,9 @@ class RenderConfig:
         logo_marker: Logo drawn on the head of the growing line, moving with it.
             Each is a registry name or a path to an image; which one, and how
             the logo is sized and anchored, is resolved outside the domain.
+        logo_size_px: Width in device pixels for the resolutions above, applied
+            to every placement. ``None`` keeps the size resolved from the logo
+            registry or the 48-px default for bare paths.
         tiff: Optional local GeoTIFF to use instead of downloaded tiles. Wins
             over ``style``, since bringing your own imagery leaves no choice to
             make about a tile server.
@@ -75,6 +78,7 @@ class RenderConfig:
     logo_start: str | None = None
     logo_end: str | None = None
     logo_marker: str | None = None
+    logo_size_px: int | None = None
     tiff: Path | None = None
     appearance: Style = DEFAULT_STYLE
 
@@ -100,6 +104,8 @@ class RenderConfig:
             # reporting: resolving "" would look for a file with no name.
             if value is not None and not value.strip():
                 raise ValueError(f"{field} must be a name or a path, not empty")
+        if self.logo_size_px is not None and self.logo_size_px <= 0:
+            raise ValueError(f"logo_size_px must be > 0, got {self.logo_size_px}")
         if self.bounds is not None:
             validate_bounds(self.bounds)
 

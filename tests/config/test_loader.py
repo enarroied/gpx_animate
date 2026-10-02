@@ -78,6 +78,8 @@ class TestCoercion:
             ("out", "a/b.mp4", Path("a/b.mp4")),
             ("logo_start", "brand.png", "brand.png"),
             ("logo_end", "car", "car"),
+            ("logo_size_px", "192", 192),
+            ("logo_size_px", 192, 192),
             ("force", "yes", True),
             ("force", "off", False),
             ("force", True, True),
