@@ -54,7 +54,9 @@ class RenderConfig:
             the logo is sized and anchored, is resolved outside the domain.
         logo_size_px: Width in device pixels for the resolutions above, applied
             to every placement. ``None`` keeps the size resolved from the logo
-            registry or the 48-px default for bare paths.
+            registry or the default size for bare paths.
+        logo_plate_padding: Padding fraction for the white plate behind logos.
+            ``0.0`` means no plate.
         tiff: Optional local GeoTIFF to use instead of downloaded tiles. Wins
             over ``style``, since bringing your own imagery leaves no choice to
             make about a tile server.
@@ -79,6 +81,7 @@ class RenderConfig:
     logo_end: str | None = None
     logo_marker: str | None = None
     logo_size_px: int | None = None
+    logo_plate_padding: float = 0.0
     tiff: Path | None = None
     appearance: Style = DEFAULT_STYLE
 
@@ -106,6 +109,10 @@ class RenderConfig:
                 raise ValueError(f"{field} must be a name or a path, not empty")
         if self.logo_size_px is not None and self.logo_size_px <= 0:
             raise ValueError(f"logo_size_px must be > 0, got {self.logo_size_px}")
+        if self.logo_plate_padding < 0:
+            raise ValueError(
+                f"logo_plate_padding must be >= 0, got {self.logo_plate_padding}"
+            )
         if self.bounds is not None:
             validate_bounds(self.bounds)
 

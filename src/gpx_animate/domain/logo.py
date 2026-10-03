@@ -38,7 +38,7 @@ overrides it. ``center`` is the neutral choice: it is the only one that looks
 the same at the start, the end and the head.
 """
 
-DEFAULT_LOGO_SIZE_PX = 48
+DEFAULT_LOGO_SIZE_PX = 96
 """Width in pixels used when a logo is given as a bare path.
 
 Width, not height and not the larger side, because that is what "a 48px logo"

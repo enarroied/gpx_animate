@@ -115,6 +115,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="override logo width in device pixels, for every placement",
     )
     parser.add_argument(
+        "--logo-plate-padding",
+        type=float,
+        metavar="FRAC",
+        help="padding fraction for logo plate (0.0 for no plate)",
+    )
+    parser.add_argument(
         "--logo-registry",
         type=Path,
         metavar="PATH",
@@ -164,6 +170,7 @@ def config_from_args(
             "logo_end",
             "logo_marker",
             "logo_size",
+            "logo_plate_padding",
         )
         if getattr(args, field, None) is not None
     }

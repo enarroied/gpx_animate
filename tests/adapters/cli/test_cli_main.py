@@ -242,6 +242,7 @@ class TestParser:
             "logo_end",
             "logo_marker",
             "logo_size",
+            "logo_plate_padding",
             "logo_registry",
             "log_level",
         }

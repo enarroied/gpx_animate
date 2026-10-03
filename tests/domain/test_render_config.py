@@ -99,6 +99,11 @@ class TestValidation:
     def test_logo_size_px_must_be_positive(self):
         with pytest.raises(ValueError, match="logo_size_px must be > 0"):
             RenderConfig(logo_size_px=0)
+
+    def test_logo_plate_padding_must_be_non_negative(self):
+        with pytest.raises(ValueError, match="logo_plate_padding must be >= 0"):
+            RenderConfig(logo_plate_padding=-0.1)
+
         with pytest.raises(ValueError, match="logo_size_px must be > 0"):
             RenderConfig(logo_size_px=-24)
 
@@ -191,3 +196,8 @@ def _config_with_logo(field: str, value: str) -> RenderConfig:
     if field == "logo_end":
         return RenderConfig(logo_end=value)
     return RenderConfig(logo_marker=value)
+
+
+def test_logo_plate_padding_must_be_non_negative(self):
+    with pytest.raises(ValueError, match="logo_plate_padding must be >= 0"):
+        RenderConfig(logo_plate_padding=-0.1)

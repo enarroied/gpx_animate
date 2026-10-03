@@ -63,4 +63,10 @@ Nothing has been released yet. Current state of the project:
   sits on a rounded white backplate so it reads over a busy basemap. A fully transparent
   image still draws nothing. `logo_size_px` is settable in config files and the
   environment too.
+- New: `--logo-plate-padding` controls logo backplate padding (default `0.0` = no plate).
+  When padding > 0, visible logos sit on a rounded white backplate.
+- **Behaviour change:** Default logo size increased to 96px (was 48px). Bare-path logos and
+  registry defaults without explicit size use the larger default.
+- **Behaviour change:** When logos are used, frames are saved with transparent background
+  (alpha channel) so the video background is transparent in outputs that support it.
 - Specified in `SPECS.md` but not implemented: PyQt GUI (US-8), GIF export (US-10).

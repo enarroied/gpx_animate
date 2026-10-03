@@ -85,6 +85,7 @@ def _has_visible_pixels(image: np.ndarray) -> bool:
 
 def _plate_bounds(
     box: tuple[float, float, float, float],
+    pad_fraction: float,
 ) -> tuple[float, float, float, float]:
     """Inflate a logo box by the backplate pad, as ``(x, y, width, height)``.
 
@@ -97,8 +98,8 @@ def _plate_bounds(
     x0, x1, y0, y1 = box
     width = x1 - x0
     height = y1 - y0
-    pad_x = LOGO_BACKPLATE_PAD_FRACTION * width
-    pad_y = LOGO_BACKPLATE_PAD_FRACTION * height
+    pad_x = pad_fraction * width
+    pad_y = pad_fraction * height
     return x0 - pad_x, y0 - pad_y, width + 2 * pad_x, height + 2 * pad_y
 
 
@@ -106,6 +107,7 @@ def _logo_plate(
     box: tuple[float, float, float, float],
     units_per_px: tuple[float, float],
     dpi: int,
+    pad_fraction: float,
 ) -> FancyBboxPatch:
     """The rounded white plate shown behind a positioned logo.
 
@@ -120,9 +122,9 @@ def _logo_plate(
     Returns:
         An unstyled white patch ready to be added to the axes.
     """
-    x, y, width, height = _plate_bounds(box)
+    x, y, width, height = _plate_bounds(box, pad_fraction)
     radius_pts = (
-        LOGO_BACKPLATE_PAD_FRACTION
+        pad_fraction
         * min(width / units_per_px[0], height / units_per_px[1])
         * 72.0
         / dpi
@@ -234,7 +236,7 @@ class MatplotlibRenderer:
         self.basemap = basemap
         self.logos = logos
 
-    def render(self, config: RenderConfig, track: Track, out_dir: Path) -> RenderResult:
+    def render(self, config: RenderConfig, track: Track, out_dir: Path) -> RenderResult:  # noqa: PLR0915
         """Render every frame of the animation into ``out_dir``.
 
         Args:
@@ -264,8 +266,16 @@ class MatplotlibRenderer:
 
         width, height = config.size_inches
         fig, ax = plt.subplots(figsize=(width, height), dpi=config.dpi)
-        fig.patch.set_facecolor(appearance.bg_color)
-        ax.set_facecolor(appearance.bg_color)
+        has_logo = any(
+            logo is not None
+            for logo in (config.logo_start, config.logo_end, config.logo_marker)
+        )
+        if has_logo:
+            fig.patch.set_facecolor("none")
+            ax.set_facecolor("none")
+        else:
+            fig.patch.set_facecolor(appearance.bg_color)
+            ax.set_facecolor(appearance.bg_color)
 
         # Bounds with padding. A degenerate track (a single point, or a straight
         # east-west line) has zero extent on one axis; Bbox.padded falls back to
@@ -383,7 +393,12 @@ class MatplotlibRenderer:
             )
 
             frame_path = out_dir / f"frame_{index:05d}.png"
-            fig.savefig(frame_path, dpi=config.dpi, facecolor=fig.get_facecolor())
+            fig.savefig(
+                frame_path,
+                dpi=config.dpi,
+                facecolor=fig.get_facecolor(),
+                transparent=has_logo,
+            )
             frame_paths.append(frame_path)
 
         plt.close(fig)
@@ -467,7 +482,12 @@ class MatplotlibRenderer:
             if logo is None or not _has_visible_pixels(logo.image):
                 continue
             logo_box = _logo_box(logo, x, y, units_per_px)
-            axes.add_patch(_logo_plate(logo_box, units_per_px, config.dpi))
+            if config.logo_plate_padding > 0:
+                axes.add_patch(
+                    _logo_plate(
+                        logo_box, units_per_px, config.dpi, config.logo_plate_padding
+                    )
+                )
             axes.imshow(
                 logo.image,
                 extent=logo_box,
@@ -481,8 +501,12 @@ class MatplotlibRenderer:
         moving = logos.get("marker")
         if moving is not None and _has_visible_pixels(moving.image):
             initial = _logo_box(moving, xs[0], ys[0], units_per_px)
-            plate = _logo_plate(initial, units_per_px, config.dpi)
-            axes.add_patch(plate)
+            plate = None
+            if config.logo_plate_padding > 0:
+                plate = _logo_plate(
+                    initial, units_per_px, config.dpi, config.logo_plate_padding
+                )
+                axes.add_patch(plate)
             image = axes.imshow(
                 moving.image,
                 extent=initial,
@@ -495,11 +519,14 @@ class MatplotlibRenderer:
                 x: float,
                 y: float,
                 image: AxesImage = image,
-                plate: FancyBboxPatch = plate,
+                plate: FancyBboxPatch | None = plate,
             ) -> None:
                 logo_box = _logo_box(moving, x, y, units_per_px)
                 image.set_extent(logo_box)
-                plate.set_bounds(*_plate_bounds(logo_box))
+                if plate is not None:
+                    plate.set_bounds(
+                        *_plate_bounds(logo_box, config.logo_plate_padding)
+                    )
 
         # imshow resizes the view to whatever it drew, so put the frame back.
         # A logo on the last point legitimately hangs outside the view and must
