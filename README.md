@@ -115,6 +115,10 @@ uv run gpx-animate my_trip.gpx --size 9:16 \
 | `--gif-colors` | int | `128` | Palette size: `64`, `128` or `256` |
 | `--gif-dither` | flag | off | Dither the palette, trading bytes for smoother gradients |
 | `--gif-loop` | int | `0` | Repeat count; `0` loops forever |
+| `--profile` | enum | `off` | Elevation chart position: `off`, `top`, `bottom`, `top-left`, `top-right`, `bottom-left`, `bottom-right` |
+| `--profile-height` | float | `0.15` | Chart height as a fraction of the frame height |
+| `--profile-width` | float | `0.28` | Chart width as a fraction of the frame width; ignored by the `top` and `bottom` strips, which span the frame |
+| `--chart-video` | flag | off | Also write the elevation chart as its own video |
 | `--margin` | float | `0.15` | Fractional margin around the track bounding box |
 | `--bounds` | str | — | Fixed view `min_lon,min_lat,max_lon,max_lat` in degrees; overrides `--margin` |
 | `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
@@ -186,6 +190,27 @@ rounded to a whole centisecond up front: `--gif-fps 15` is written as 70 ms,
 about 14.3 fps effective. And because the hold phase repeats the final frame
 pixel for pixel, Pillow collapses those runs — a `--duration 0.3 --hold 1.0` clip
 is mostly a still image and produces a short GIF that plays for the full length.
+
+### Elevation chart
+
+`--profile` draws an elevation chart over the map, in any of six positions plus
+`off`. `top` and `bottom` are strips spanning the full frame and ignore
+`--profile-width`; the four corners are panels sized by both fractions:
+
+```
+uv run gpx-animate my_trip.gpx --profile bottom-left --profile-width 0.35
+```
+
+The chart's axes are fixed to the whole track and a cursor advances with the
+trace, so the shape never rescales mid-animation. The panel is drawn as an inset
+and keeps a semi-opaque plate behind it; logos are drawn on top of the map and
+outside the panel, so a chart in one corner does not dim them.
+
+`--chart-video` additionally writes the same chart as its own video, named
+`<out-stem>-chart<suffix>` beside the main one. Both videos share size, frame
+rate, duration, hold and frame count, and both derive progress from the same
+helper, so frame *n* of the chart is the same moment as frame *n* of the map. The
+two can therefore be cut against each other and stay in sync.
 
 ### Where the video goes
 
@@ -266,6 +291,10 @@ a config file or the environment.
 | `gif.colors` | int | `128` | Palette size: `64`, `128` or `256` |
 | `gif.dither` | bool | `false` | Dither the palette |
 | `gif.loop` | int | `0` | Repeat count; `0` loops forever |
+| `profile` | str | `off` | Elevation chart position; see `--profile` |
+| `profile_width` | float | `0.28` | Chart width fraction; ignored by `top` and `bottom` |
+| `profile_height` | float | `0.15` | Chart height fraction |
+| `chart_video` | bool | `false` | Write the elevation chart as its own video |
 | `appearance.bg_color` | str | `#f5f5f2` | Figure background |
 | `appearance.track_faint` | str | `#b8b8b8` | The whole track, before it is drawn |
 | `appearance.track_bright` | str | `#e63946` | The part drawn so far |
@@ -387,13 +416,12 @@ this tool's own, so nothing outside it should ever be there.
 ## 8. Roadmap (candidate v2 items)
 
 1. Douglas-Peucker simplification (`--simplify`).
-2. Animated elevation profile subplot.
-3. Speed-gradient coloring along the track.
-4. Intro/outro fade via ffmpeg filters.
-5. Batch mode: `for g in trips/*.gpx; do gpx-animate "$g"; done`.
-6. Optional background music muxing.
-7. `--keep-frames` debug flag.
-8. Preset "brands" (e.g. `--brand hiking`, `--brand city`) as named configs.
+2. Speed-gradient coloring along the track.
+3. Intro/outro fade via ffmpeg filters.
+4. Batch mode: `for g in trips/*.gpx; do gpx-animate "$g"; done`.
+5. Optional background music muxing.
+6. `--keep-frames` debug flag.
+7. Preset "brands" (e.g. `--brand hiking`, `--brand city`) as named configs.
 
 ---
 

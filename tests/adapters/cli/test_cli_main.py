@@ -21,6 +21,7 @@ from gpx_animate.config import layers
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.render_config import PROFILE_POSITIONS
 from gpx_animate.domain.render_config import RenderConfig
 
 
@@ -256,6 +257,10 @@ class TestParser:
             "gif_colors",
             "gif_dither",
             "gif_loop",
+            "profile",
+            "profile_height",
+            "profile_width",
+            "chart_video",
             "logo_registry",
             "log_level",
         }
@@ -725,4 +730,128 @@ class TestGifFlags:
             cli.build_parser().parse_args(["--help"])
         out = capsys.readouterr().out
         for flag in ("--gif", "--gif-size", "--gif-fps", "--gif-colors", "--gif-loop"):
+            assert flag in out
+
+
+class TestProfileFlags:
+    """US-11's CLI surface: where the chart goes, and the second video."""
+
+    def test_no_profile_by_default(self, recorder, short_track_gpx, tmp_path):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"))
+        assert recorder.configs[-1].profile == "off"
+
+    @pytest.mark.parametrize("position", sorted(PROFILE_POSITIONS))
+    def test_every_position_is_reachable(
+        self, recorder, short_track_gpx, tmp_path, position
+    ):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--profile",
+            position,
+        )
+        assert recorder.configs[-1].profile == position
+
+    def test_an_unknown_position_is_an_argparse_error(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        with pytest.raises(SystemExit):
+            cli.build_parser().parse_args(
+                [str(short_track_gpx), "--profile", "sideways"]
+            )
+        assert recorder.rendered == 0
+
+    def test_the_height_is_applied(self, recorder, short_track_gpx, tmp_path):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--profile",
+            "bottom",
+            "--profile-height",
+            "0.3",
+        )
+        assert recorder.configs[-1].profile_height == 0.3
+
+    def test_the_width_is_applied(self, recorder, short_track_gpx, tmp_path):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--profile",
+            "top-left",
+            "--profile-width",
+            "0.4",
+        )
+        assert recorder.configs[-1].profile_width == 0.4
+
+    def test_a_zero_width_exits_one_before_rendering(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        rc = run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--profile",
+            "top",
+            "--profile-width",
+            "0",
+        )
+        assert rc == 1
+        assert recorder.rendered == 0
+
+    def test_no_chart_video_by_default(self, recorder, short_track_gpx, tmp_path):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"))
+        assert recorder.configs[-1].chart_video is False
+
+    def test_the_flag_turns_the_second_video_on(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--chart-video")
+        assert recorder.configs[-1].chart_video is True
+
+    def test_the_chart_video_gets_its_own_render(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        """A second video needs a second pass: the frames differ entirely."""
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--chart-video")
+        assert recorder.rendered == 2
+
+    def test_the_chart_frames_are_handed_over(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--chart-video")
+        assert len(recorder.chart_encoded) == 1
+
+    def test_no_chart_frames_without_the_flag(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--profile",
+            "bottom",
+        )
+        assert recorder.chart_encoded == []
+
+    def test_the_chart_alone_writes_the_second_video(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        """--chart-video does not imply --profile: the two are independent."""
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--chart-video")
+        assert recorder.configs[-1].profile == "off"
+        assert len(recorder.chart_encoded) == 1
+
+    def test_the_help_lists_the_chart_flags(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.build_parser().parse_args(["--help"])
+        out = capsys.readouterr().out
+        for flag in (
+            "--profile",
+            "--profile-height",
+            "--profile-width",
+            "--chart-video",
+        ):
             assert flag in out

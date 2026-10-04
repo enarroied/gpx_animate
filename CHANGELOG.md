@@ -24,6 +24,14 @@ Nothing has been released yet. Current state of the project:
   `GifEncoder` port; `PillowGifEncoder` is the adapter and `pillow` is now a
   declared dependency rather than arriving transitively. A missing Pillow is
   reported before the render starts.
+- **Added the elevation chart.** `--profile` draws it over the map at
+  `top`/`bottom` strips or any of four corners, sized by `--profile-width` and
+  `--profile-height`; `--chart-video` also writes it as `<stem>-chart<suffix>`.
+  Axes stay fixed to the whole track with a cursor tracking progress, and both
+  videos share one progress helper so they stay frame-for-frame alignable.
+  Shared drawing code lives in `elevation_chart.py`, used by both the overlay
+  and a standalone `ProfileRenderer`.
+
 - Installed package (`gpx_animate`) with a `gpx-animate` console entry point:
   `uv run gpx-animate <trip.gpx>`. The single-file script is gone; rendering output
   is unchanged, frame for frame.

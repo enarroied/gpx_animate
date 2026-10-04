@@ -27,7 +27,7 @@ src/gpx_animate/
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 100% statement **and**
   branch coverage, with a 90% floor in `[tool.coverage.report] fail_under`.
-  657 tests: 649 offline plus 8 `integration`-marked ones.
+  788 tests: 780 offline plus 8 `integration`-marked ones.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
@@ -62,12 +62,15 @@ src/gpx_animate/
   a still image and yields a 2-frame GIF whose second frame holds 1200 ms. The
   log line reports frames *sampled*, not frames *written*. Do not "fix" this by
   passing `optimize=False`.
-- **`export_video` takes `gif_encoder` as a keyword, defaulting to `None`, and
-  never imports an adapter.** The CLI injects it and is also where
-  `require_pillow()` runs, so a missing Pillow is a one-line exit before a single
-  frame is rendered. Any test double of the use case must accept the parameter.
-- **Output order is MP4, then GIF.** The MP4 is the deliverable and is written
-  first.
+- **`export_video` takes `gif_encoder` and `chart_frames` as keywords, defaulting
+  to `None`, and never imports an adapter.** The CLI injects both and is also
+  where `require_pillow()` runs, so a missing Pillow is a one-line exit before a
+  single frame is rendered. Any test double of the use case must accept both
+  parameters, and the CLI passes `chart_frames=` even when it is `None`.
+- **Output order is MP4, then chart, then GIF.** The MP4 is the deliverable and
+  is written first; the chart sibling is `<stem>-chart<suffix>`, derived rather
+  than run through `resolve_output`, so a numbered main render does not consume a
+  second number and an existing chart is overwritten.
 - **GIF delay quantisation is measured, not assumed.** See `frame_delay_ms`
   above; the 15 fps case is pinned end to end through a real file.
 - Basemap tiles are downloaded at render time; renders need network access.
@@ -93,7 +96,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 649 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 780 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -113,7 +116,7 @@ there is no publish token to manage.
 | Version | Scope | Exit criteria |
 |---|---|---|
 | `0.0.0` | now: M0–M4 landed, unreleased | no tags yet |
-| `0.1.0` | SPECS M3–M6 + US-5/7/10 | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
+| `0.1.0` | SPECS M3–M6 + US-5/7/10/11 | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
 
@@ -223,6 +226,24 @@ work-in-progress edits. Same reason: any user-visible change updates
   `AxesImage` moved per frame via a closure; start/end logos are drawn once. One
   throwaway `fig.canvas.draw()` realizes the axes extent so the device-px math
   is correct after `tight_layout`.
+- **`PROFILE_POSITIONS` is the single source of truth** for `--profile`'s allowed
+  values: a mutable dict of `position -> (loc, x_anchor, y_anchor)`, and
+  `FULL_WIDTH_PROFILE_POSITIONS` picks out the strips. `RenderConfig.__post_init__`
+  validates against the table rather than a second tuple, so adding a position
+  needs no edit elsewhere. It is a *dict* on purpose — tests `setitem` a
+  middle-anchored entry to pin the centring rule that no current position uses.
+- **The chart draws the whole curve once and moves a cursor**, rather than
+  redrawing a growing prefix each frame: the axes are fixed to the full track so
+  the shape never rescales mid-animation. `revealed_point_count` is shared by
+  both renderers for the same reason — the two videos must land on the same
+  moment per frame, so neither may do that arithmetic inline. A test asserts the
+  map renderer uses the *same function object*, since behaviour-identical copies
+  would pass every frame-count test while quietly drifting.
+- **`inset_axes` has three traps**, all silent, all documented at the top of
+  `elevation_chart.py`: `from_any(0.28)` is 0.28 *points* (use `"28%"`), the
+  child is sized `"100%"` of the anchor box because passing size twice squares
+  the fraction, and `tight_layout()` refuses to lay out insets — so the inset is
+  created after it has run.
 - The User-Agent is passed **explicitly** as `headers={"User-Agent": ...}` to
   `contextily.bounds2img`. The monolith also mutated
   `requests.utils.default_headers()["User-Agent"]` at import, which never took
@@ -301,11 +322,11 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS US-8 PyQt GUI and US-11 (elevation chart): **not** implemented. Don't
-  write code or docs as if they exist. US-5 (logo registry), US-6 (basemap
-  abstraction), US-7 (boundary control) and US-10 (GIF export) are implemented —
+- SPECS US-8 PyQt GUI: **not** implemented. Don't write code or docs as if it
+  exists. US-5 (logo registry), US-6 (basemap abstraction), US-7 (boundary
+  control), US-10 (GIF export) and US-11 (elevation chart) are all implemented —
   `--logo-start|end|marker` plus `--logo-registry`, `--tiff` / `--style none`,
-  `--bounds`, and `--gif`.
+  `--bounds`, `--gif`, and `--profile` / `--chart-video`.
 
 ## Conventions (SPECS §6 — binding)
 

@@ -27,6 +27,7 @@ from gpx_animate.adapters.logos.registry import DEFAULT_REGISTRY_PATH
 from gpx_animate.adapters.logos.registry import LogoRegistry
 from gpx_animate.adapters.logos.registry import PngLogoLoader
 from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
+from gpx_animate.adapters.renderers.profile_renderer import ProfileRenderer
 from gpx_animate.application.errors import GifEncodeError
 from gpx_animate.application.errors import GpxAnimateError
 from gpx_animate.application.use_cases.export_video import export_video
@@ -39,6 +40,7 @@ from gpx_animate.config.layers import GIF_GROUP
 from gpx_animate.config.layers import settable_keys
 from gpx_animate.config.loader import load_config
 from gpx_animate.domain.bbox import parse_bounds
+from gpx_animate.domain.render_config import PROFILE_POSITIONS
 from gpx_animate.domain.render_config import RenderConfig
 
 
@@ -172,6 +174,34 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="LOOP",
         help="GIF loop count (0 = infinite)",
     )
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILE_POSITIONS),
+        default=None,
+        help="elevation chart position (default: off)",
+    )
+    parser.add_argument(
+        "--profile-height",
+        type=float,
+        metavar="FRAC",
+        help="chart height as fraction of frame height",
+    )
+    parser.add_argument(
+        "--profile-width",
+        type=float,
+        metavar="FRAC",
+        help=(
+            "chart width as fraction of frame width; ignored by the "
+            "full-width top and bottom strips"
+        ),
+    )
+    parser.add_argument(
+        "--chart-video",
+        action="store_true",
+        default=None,
+        help="also write the elevation chart as its own video",
+    )
+
     return parser
 
 
@@ -295,11 +325,21 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory() as frame_dir:
             frames = render_animation(config, track, Path(frame_dir), renderer, logos)
 
+            chart_frames = None
+            if config.chart_video:
+                chart_renderer = ProfileRenderer()
+                chart_dir = Path(frame_dir).parent / "chart_frames"
+                chart_dir.mkdir(parents=True, exist_ok=True)
+                chart_frames = render_animation(
+                    config, track, chart_dir, chart_renderer, logos
+                )
+
             out_path = export_video(
                 config,
                 frames,
                 encoder,
                 gif_encoder=gif_encoder,
+                chart_frames=chart_frames,
             )
     except GpxAnimateError as error:
         # Deliberate failures get a message, not a traceback.

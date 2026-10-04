@@ -31,6 +31,9 @@ from matplotlib.axes import Axes  # noqa: E402
 from matplotlib.collections import LineCollection  # noqa: E402
 from matplotlib.image import AxesImage  # noqa: E402
 
+from gpx_animate.adapters.renderers.elevation_chart import ChartHandle
+from gpx_animate.adapters.renderers.elevation_chart import add_elevation_chart
+from gpx_animate.adapters.renderers.elevation_chart import revealed_point_count
 from gpx_animate.application.ports import BasemapProvider
 from gpx_animate.application.ports import Logo
 from gpx_animate.application.ports import LogoLoader
@@ -236,7 +239,7 @@ class MatplotlibRenderer:
         self.basemap = basemap
         self.logos = logos
 
-    def render(self, config: RenderConfig, track: Track, out_dir: Path) -> RenderResult:  # noqa: PLR0915
+    def render(self, config: RenderConfig, track: Track, out_dir: Path) -> RenderResult:  # noqa: PLR0915, PLR0912
         """Render every frame of the animation into ``out_dir``.
 
         Args:
@@ -288,6 +291,18 @@ class MatplotlibRenderer:
             view = Bbox(X.min(), Y.min(), X.max(), Y.max()).padded(config.margin)
         ax.set_xlim(view.min_x, view.max_x)
         ax.set_ylim(view.min_y, view.max_y)
+
+        chart: ChartHandle | None = None
+        if config.profile != "off" and len(dists) > 0:
+            chart = add_elevation_chart(
+                ax,
+                dists,
+                ele,
+                config.profile,
+                config.profile_width,
+                config.profile_height,
+                appearance,
+            )
 
         self.draw_basemap(ax, view)
 
@@ -371,12 +386,10 @@ class MatplotlibRenderer:
 
         frame_paths: list[Path] = []
         for index in range(n_frames):
-            # Hold frames reuse the final state.
-            progress = (
-                index / max(1, n_draw_frames - 1) if index < n_draw_frames else 1.0
-            )
-            n_points = max(2, int(round(progress * (len(X) - 1))) + 1)
-            n_points = min(n_points, len(X))
+            # The shared helper is the single source of truth for progress:
+            # the standalone chart video has to land on the same frame as this
+            # one, so neither renderer may do this arithmetic on its own.
+            n_points = revealed_point_count(index, n_draw_frames, len(X))
 
             # matplotlib's stub types set_segments too narrowly for an ndarray.
             revealed = segments[: n_points - 1]
@@ -391,6 +404,8 @@ class MatplotlibRenderer:
                 f"Distance   {done_km:5.1f} / {total_km:.1f} km\n"
                 f"Elevation  {done_ele:5.0f} m  (+{total_gain:.0f} m total)"
             )
+            if chart is not None:
+                chart.set_progress(done_km)
 
             frame_path = out_dir / f"frame_{index:05d}.png"
             fig.savefig(

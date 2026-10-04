@@ -50,3 +50,7 @@ class LogoRegistryError(GpxAnimateError, ValueError):
 
 class GifEncodeError(GpxAnimateError, RuntimeError):
     """A GIF could not be encoded, usually because Pillow is not installed."""
+
+
+class ChartFramesMissingError(GpxAnimateError, ValueError):
+    """``--chart-video`` was asked for but no chart frames were rendered."""

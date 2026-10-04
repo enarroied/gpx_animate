@@ -116,6 +116,8 @@ COERCERS: dict[str, Callable[[Any], Any]] = {
     "gif.dither": _to_bool,
     "gif.enabled": _to_bool,
     "profile_height": float,
+    "profile_width": float,
+    "chart_video": _to_bool,
 }
 """How each non-string key is converted. Everything else is a string."""
 

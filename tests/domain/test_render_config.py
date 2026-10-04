@@ -8,6 +8,8 @@ import pytest
 
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.render_config import FULL_WIDTH_PROFILE_POSITIONS
+from gpx_animate.domain.render_config import PROFILE_POSITIONS
 from gpx_animate.domain.render_config import SIZE_PRESETS
 from gpx_animate.domain.render_config import GifConfig
 from gpx_animate.domain.render_config import RenderConfig
@@ -198,6 +200,74 @@ def _config_with_logo(field: str, value: str) -> RenderConfig:
     if field == "logo_end":
         return RenderConfig(logo_end=value)
     return RenderConfig(logo_marker=value)
+
+
+class TestProfilePosition:
+    """US-11: every chart position is a key of one table, validated from it."""
+
+    def test_it_defaults_to_off(self):
+        """A plain render must not sprout a chart nobody asked for."""
+        assert RenderConfig().profile == "off"
+
+    def test_the_default_width_and_height_are_strips_of_the_frame(self):
+        config = RenderConfig()
+        assert 0 < config.profile_width < 1
+        assert 0 < config.profile_height < 1
+
+    @pytest.mark.parametrize("position", sorted(PROFILE_POSITIONS))
+    def test_every_position_in_the_table_is_accepted(self, position):
+        assert RenderConfig(profile=position).profile == position
+
+    def test_an_unknown_position_is_rejected(self):
+        with pytest.raises(ValueError, match="profile must be one of"):
+            RenderConfig(profile="sideways")
+
+    def test_the_error_lists_the_valid_positions(self):
+        with pytest.raises(ValueError, match="bottom-left"):
+            RenderConfig(profile="sideways")
+
+    def test_the_table_covers_the_documented_positions(self):
+        assert set(PROFILE_POSITIONS) == {
+            "off",
+            "top",
+            "bottom",
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right",
+        }
+
+    def test_only_top_and_bottom_span_the_full_width(self):
+        assert {"top", "bottom"} == FULL_WIDTH_PROFILE_POSITIONS
+
+    @pytest.mark.parametrize("field", ["profile_width", "profile_height"])
+    @pytest.mark.parametrize("value", [0, 1, -0.1, 1.1, 2.0])
+    def test_a_fraction_outside_zero_and_one_is_rejected(self, field, value):
+        with pytest.raises(ValueError, match=f"{field} must be between 0 and 1"):
+            RenderConfig(**{field: value})
+
+    @pytest.mark.parametrize("field", ["profile_width", "profile_height"])
+    def test_replacing_revalidates_the_fraction(self, field):
+        with pytest.raises(ValueError, match=f"{field} must be between 0 and 1"):
+            replace(RenderConfig(), **{field: 0})
+
+
+class TestChartVideo:
+    def test_it_defaults_to_off(self):
+        """chart_video is a separate switch, so it needs no field here."""
+        assert RenderConfig().chart_video is False
+
+    def test_it_can_be_turned_on(self):
+        assert RenderConfig(chart_video=True).chart_video is True
+
+    def test_it_is_independent_of_the_overlay(self):
+        """--profile and --chart-video are separate switches."""
+        config = RenderConfig(profile="bottom", chart_video=True)
+        assert config.profile == "bottom"
+        assert config.chart_video is True
+
+    def test_the_shipped_default_matches_the_bare_dataclass(self):
+        assert default_config().chart_video == RenderConfig().chart_video
 
 
 class TestGifConfig:

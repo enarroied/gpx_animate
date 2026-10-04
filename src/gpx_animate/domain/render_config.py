@@ -27,6 +27,30 @@ SIZE_PRESETS: dict[str, tuple[float, float]] = {
 DEFAULT_OUTPUT_DIR = Path("output")
 """Where renders land when ``--out`` is not given, relative to the cwd."""
 
+PROFILE_EDGE_MARGIN = 0.02
+"""Axes fraction kept clear between a corner chart and the frame edge."""
+
+PROFILE_POSITIONS: dict[str, tuple[str, float, float]] = {
+    "off": ("", 0.5, 0.5),
+    "top": ("upper left", 0.5, 1.0),
+    "bottom": ("lower left", 0.5, 0.0),
+    "top-left": ("upper left", 0.0, 1.0),
+    "top-right": ("upper left", 1.0, 1.0),
+    "bottom-left": ("lower left", 0.0, 0.0),
+    "bottom-right": ("lower left", 1.0, 0.0),
+}
+"""Where the elevation chart sits, as ``(loc, x_anchor, y_anchor)``.
+
+The two anchors are read independently so a corner needs no special-casing, and
+a centre anchor centres the panel -- which is how a future middle position stays
+honest instead of falling through to whichever branch was written last. A
+mutable dict on purpose: it is the single source of truth for ``--profile``'s
+allowed values, and tests add entries to check the general rules.
+"""
+
+FULL_WIDTH_PROFILE_POSITIONS = frozenset({"top", "bottom"})
+"""Positions that span the frame and therefore ignore ``profile_width``."""
+
 
 @dataclass(frozen=True)
 class GifConfig:
@@ -125,6 +149,10 @@ class RenderConfig:
     tiff: Path | None = None
     appearance: Style = DEFAULT_STYLE
     gif: GifConfig = GifConfig()
+    profile: str = "off"
+    profile_width: float = 0.28
+    profile_height: float = 0.15
+    chart_video: bool = False
 
     def __post_init__(self) -> None:  # noqa: PLR0912
         if self.fps <= 0:
@@ -154,6 +182,15 @@ class RenderConfig:
             raise ValueError(
                 f"logo_plate_padding must be >= 0, got {self.logo_plate_padding}"
             )
+        if self.profile not in PROFILE_POSITIONS:
+            raise ValueError(
+                f"profile must be one of {sorted(PROFILE_POSITIONS)}, "
+                f"got {self.profile!r}"
+            )
+        for field in ("profile_width", "profile_height"):
+            value = getattr(self, field)
+            if value <= 0 or value >= 1:
+                raise ValueError(f"{field} must be between 0 and 1, got {value}")
         if self.bounds is not None:
             validate_bounds(self.bounds)
 

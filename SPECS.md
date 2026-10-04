@@ -469,6 +469,8 @@ class RenderConfig:
     logo_end: str | None
     logo_marker: str | None
     gif: GifConfig
+    profile: str
+    profile_height: float
     # …colors, fonts, output_dir, force
 
 @dataclass(frozen=True)
@@ -511,6 +513,9 @@ Options:
   --gif-colors [64|128|256] GIF palette size [default: 128]
   --gif-dither / --no-gif-dither   [default: off]
   --gif-loop INTEGER        GIF loop count, 0 = forever [default: 0]
+  --profile [off|top|bottom]  Elevation profile position [default: off]
+  --profile-height FLOAT       Height of profile as fraction of frame height [default: 0.15]
+
   --log-level [DEBUG|INFO|WARNING|ERROR]
   --help
 ```
