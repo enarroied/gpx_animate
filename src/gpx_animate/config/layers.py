@@ -29,6 +29,7 @@ from typing import Any
 
 import tomllib
 
+from gpx_animate.domain.render_config import GifConfig
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.style import Style
 
@@ -43,6 +44,7 @@ PROJECT_CONFIG_NAME = "gpx-animate.toml"
 """Filename looked for in the directory the command was run from."""
 
 APPEARANCE_GROUP = "appearance"
+GIF_GROUP = "gif"
 """Config group holding the :class:`~gpx_animate.domain.style.Style` fields."""
 
 
@@ -66,7 +68,7 @@ def config_keys() -> tuple[str, ...]:
     top_level = tuple(field.name for field in dataclasses.fields(RenderConfig))
     nested = tuple(
         f"{APPEARANCE_GROUP}.{field.name}" for field in dataclasses.fields(Style)
-    )
+    ) + tuple(f"{GIF_GROUP}.{field.name}" for field in dataclasses.fields(GifConfig))
     return top_level + nested
 
 
@@ -148,7 +150,7 @@ def flatten_toml(data: Mapping[str, Any], *, origin: str) -> dict[str, Any]:
     known = set(config_keys())
     flat: dict[str, Any] = {}
     for key, value in data.items():
-        if key == APPEARANCE_GROUP:
+        if key in (APPEARANCE_GROUP, GIF_GROUP):
             if not isinstance(value, Mapping):
                 raise ConfigError(f"{origin}: [{key}] must be a table")
             for sub_key, sub_value in value.items():

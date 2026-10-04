@@ -17,6 +17,13 @@ See AGENTS.md -> Versioning & releases.
 
 Nothing has been released yet. Current state of the project:
 
+- **Added GIF export.** `--gif` writes a `.gif` beside the MP4 from the frames
+  the video already used, so there is no second render. `--gif-size`,
+  `--gif-fps`, `--gif-colors`, `--gif-dither` and `--gif-loop` control it, all
+  settable in config files and the environment as `gif.*` keys. Behind a new
+  `GifEncoder` port; `PillowGifEncoder` is the adapter and `pillow` is now a
+  declared dependency rather than arriving transitively. A missing Pillow is
+  reported before the render starts.
 - Installed package (`gpx_animate`) with a `gpx-animate` console entry point:
   `uv run gpx-animate <trip.gpx>`. The single-file script is gone; rendering output
   is unchanged, frame for frame.

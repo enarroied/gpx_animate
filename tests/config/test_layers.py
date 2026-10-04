@@ -13,6 +13,7 @@ from gpx_animate.config.layers import read_env_layer
 from gpx_animate.config.layers import read_toml_layer
 from gpx_animate.config.layers import settable_keys
 from gpx_animate.config.layers import user_config_path
+from gpx_animate.domain.render_config import GifConfig
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.style import Style
 
@@ -32,7 +33,7 @@ class TestKeys:
         """A new domain field is settable everywhere without editing a list."""
         assert len(config_keys()) == len(RenderConfig.__dataclass_fields__) + len(
             Style.__dataclass_fields__
-        )
+        ) + len(GifConfig.__dataclass_fields__)
 
     def test_env_names_replace_the_dot_with_an_underscore(self):
         mapping = env_key_map()

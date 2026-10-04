@@ -10,7 +10,9 @@ import pytest
 from gpx_animate.adapters.basemaps.factory import style_choices
 from gpx_animate.adapters.basemaps.tiles import available_styles
 from gpx_animate.adapters.cli import main as cli
+from gpx_animate.adapters.encoders.gif_encoder import PillowGifEncoder
 from gpx_animate.application.errors import FfmpegNotFoundError
+from gpx_animate.application.errors import GifEncodeError
 from gpx_animate.application.ports import RenderResult
 from gpx_animate.application.use_cases.render_animation import (
     render_animation as real_render_animation,
@@ -29,6 +31,8 @@ class Recorder:
         self.configs: list[RenderConfig] = []
         self.rendered = 0
         self.encoded: list[tuple] = []
+        self.chart_encoded: list[tuple] = []
+        self.gif_encoders: list = []
         self.raise_on_render: Exception | None = None
 
     def load(self, gpx_path):
@@ -49,9 +53,12 @@ class Recorder:
             frame_count=config.n_frames,
         )
 
-    def export(self, config, frames, encoder):
-        """Stand in for export_video(config, frames, encoder)."""
+    def export(self, config, frames, encoder, gif_encoder=None, chart_frames=None):
+        """Stand in for export_video(config, frames, encoder, ...)."""
         self.encoded.append((frames.frame_dir, config.fps, config.out))
+        self.gif_encoders.append(gif_encoder)
+        if chart_frames is not None:
+            self.chart_encoded.append((chart_frames.frame_dir, config.fps, config.out))
         out = Path(config.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"fake video")
@@ -243,6 +250,12 @@ class TestParser:
             "logo_marker",
             "logo_size",
             "logo_plate_padding",
+            "gif",
+            "gif_size",
+            "gif_fps",
+            "gif_colors",
+            "gif_dither",
+            "gif_loop",
             "logo_registry",
             "log_level",
         }
@@ -343,7 +356,9 @@ class TestLogoResolution:
     def real_render(self, monkeypatch, tmp_path):
         fake = _FakeRenderer()
 
-        def fake_encode(config, frames, encoder) -> Path:
+        def fake_encode(
+            config, frames, encoder, gif_encoder=None, chart_frames=None
+        ) -> Path:
             return config.out
 
         monkeypatch.setattr(cli, "render_animation", real_render_animation)
@@ -505,3 +520,209 @@ class TestLogging:
     def test_rejects_an_unknown_level(self, short_track_gpx):
         with pytest.raises(SystemExit):
             run(str(short_track_gpx), "--log-level", "TRACE")
+
+
+class TestGifFlags:
+    """US-10's CLI surface: the flag, its knobs, and the early Pillow check."""
+
+    def test_no_gif_by_default(self, recorder, short_track_gpx, tmp_path):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"))
+        assert recorder.configs[-1].gif.enabled is False
+
+    def test_the_flag_turns_it_on(self, recorder, short_track_gpx, tmp_path):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--gif")
+        assert recorder.configs[-1].gif.enabled is True
+
+    def test_no_encoder_is_wired_when_it_is_off(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"))
+        assert recorder.gif_encoders[-1] is None
+
+    def test_an_encoder_is_wired_when_it_is_on(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--gif")
+        assert isinstance(recorder.gif_encoders[-1], PillowGifEncoder)
+
+    def test_the_size_is_applied(self, recorder, short_track_gpx, tmp_path):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--gif",
+            "--gif-size",
+            "320x240",
+        )
+        assert recorder.configs[-1].gif.size == "320x240"
+
+    def test_the_fps_is_applied(self, recorder, short_track_gpx, tmp_path):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--gif",
+            "--gif-fps",
+            "12",
+        )
+        assert recorder.configs[-1].gif.fps == 12
+
+    def test_the_colours_are_applied(self, recorder, short_track_gpx, tmp_path):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--gif",
+            "--gif-colors",
+            "256",
+        )
+        assert recorder.configs[-1].gif.colors == 256
+
+    def test_the_loop_is_applied(self, recorder, short_track_gpx, tmp_path):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--gif",
+            "--gif-loop",
+            "2",
+        )
+        assert recorder.configs[-1].gif.loop == 2
+
+    def test_dither_is_a_flag(self, recorder, short_track_gpx, tmp_path):
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--gif",
+            "--gif-dither",
+        )
+        assert recorder.configs[-1].gif.dither is True
+
+    @pytest.mark.parametrize(
+        ("flag", "value"),
+        [
+            ("--gif-size", "wide"),
+            ("--gif-size", "800"),
+            ("--gif-colors", "100"),
+            ("--gif-fps", "0"),
+            ("--gif-loop", "-1"),
+        ],
+    )
+    def test_a_nonsense_value_exits_one(
+        self, recorder, short_track_gpx, tmp_path, flag, value
+    ):
+        assert (
+            run(
+                str(short_track_gpx),
+                "--out",
+                str(tmp_path / "v.mp4"),
+                "--gif",
+                flag,
+                value,
+            )
+            == 1
+        )
+        assert recorder.rendered == 0
+
+    def test_a_missing_pillow_is_reported_before_rendering(
+        self, recorder, monkeypatch, short_track_gpx, tmp_path
+    ):
+        """SPECS US-10: the check comes before a render's worth of frames."""
+
+        def no_pillow():
+            raise GifEncodeError("Pillow is required to encode GIFs")
+
+        monkeypatch.setattr(cli, "require_pillow", no_pillow)
+        rc = run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--gif")
+        assert rc == 1
+        assert recorder.rendered == 0
+
+    def test_a_missing_pillow_is_not_checked_when_the_gif_is_off(
+        self, recorder, monkeypatch, short_track_gpx, tmp_path
+    ):
+        """No GIF asked for means no Pillow needed."""
+
+        def no_pillow():
+            raise AssertionError("require_pillow must not be called")
+
+        monkeypatch.setattr(cli, "require_pillow", no_pillow)
+        assert run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4")) == 0
+
+    def test_a_missing_pillow_reports_a_message_not_a_traceback(
+        self, monkeypatch, capsys, short_track_gpx, tmp_path
+    ):
+        def no_pillow():
+            raise GifEncodeError("Pillow is required to encode GIFs")
+
+        monkeypatch.setattr(cli, "require_pillow", no_pillow)
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--gif")
+        assert "Pillow is required" in capsys.readouterr().out
+
+    def test_the_gif_can_be_requested_from_a_config_file(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        (tmp_path / "gpx-animate.toml").write_text("gif.enabled = true\n")
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"))
+        assert recorder.configs[-1].gif.enabled is True
+
+    def test_a_flag_beats_the_config_file(self, recorder, short_track_gpx, tmp_path):
+        """Layer order: defaults < files < environment < flags."""
+        (tmp_path / "gpx-animate.toml").write_text(
+            "[gif]\nenabled = true\nsize = '999x999'\n"
+        )
+        run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--gif-size",
+            "320x240",
+        )
+        assert recorder.configs[-1].gif.size == "320x240"
+
+    def test_a_gif_fps_above_the_video_fps_exits_before_rendering(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        """Frames cannot be invented, and finding that out late is expensive."""
+        rc = run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--fps",
+            "10",
+            "--gif",
+            "--gif-fps",
+            "30",
+        )
+        assert rc == 1
+        assert recorder.rendered == 0
+
+    def test_a_gif_fps_equal_to_the_video_fps_is_fine(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        rc = run(
+            str(short_track_gpx),
+            "--out",
+            str(tmp_path / "v.mp4"),
+            "--fps",
+            "10",
+            "--gif",
+            "--gif-fps",
+            "10",
+        )
+        assert rc == 0
+        assert recorder.rendered == 1
+
+    def test_the_gif_does_not_add_a_render_pass(
+        self, recorder, short_track_gpx, tmp_path
+    ):
+        """The GIF is encoded from the MP4's frames, so still one render."""
+        run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--gif")
+        assert recorder.rendered == 1
+
+    def test_the_help_lists_the_gif_flags(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.build_parser().parse_args(["--help"])
+        out = capsys.readouterr().out
+        for flag in ("--gif", "--gif-size", "--gif-fps", "--gif-colors", "--gif-loop"):
+            assert flag in out

@@ -29,6 +29,46 @@ DEFAULT_OUTPUT_DIR = Path("output")
 
 
 @dataclass(frozen=True)
+class GifConfig:
+    """GIF export settings."""
+
+    enabled: bool = False
+    size: str = "800x450"
+    fps: int = 15
+    colors: int = 128
+    dither: bool = False
+    loop: int = 0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.size, str) or "x" not in self.size:
+            raise ValueError(f"size must be WIDTHxHEIGHT, got {self.size!r}")
+        try:
+            w_str, h_str = self.size.split("x", 1)
+            w = int(w_str)
+            h = int(h_str)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"size must be WIDTHxHEIGHT, got {self.size!r}") from exc
+        if w <= 0 or h <= 0:
+            raise ValueError(f"size must be positive, got {self.size!r}")
+        if self.fps <= 0:
+            raise ValueError(f"fps must be > 0, got {self.fps}")
+        if self.colors not in (64, 128, 256):
+            raise ValueError(f"colors must be 64, 128, or 256, got {self.colors}")
+        if self.loop < 0:
+            raise ValueError(f"loop must be >= 0, got {self.loop}")
+
+    @property
+    def width(self) -> int:
+        w_str, _ = self.size.split("x", 1)
+        return int(w_str)
+
+    @property
+    def height(self) -> int:
+        _, h_str = self.size.split("x", 1)
+        return int(h_str)
+
+
+@dataclass(frozen=True)
 class RenderConfig:
     """Everything one render needs to know.
 
@@ -84,8 +124,9 @@ class RenderConfig:
     logo_plate_padding: float = 0.0
     tiff: Path | None = None
     appearance: Style = DEFAULT_STYLE
+    gif: GifConfig = GifConfig()
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: PLR0912
         if self.fps <= 0:
             raise ValueError(f"fps must be > 0, got {self.fps}")
         if self.duration <= 0:

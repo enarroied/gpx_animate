@@ -109,6 +109,12 @@ uv run gpx-animate my_trip.gpx --size 9:16 \
 | `--logo-marker` | str | `None` | Logo that rides the moving head marker |
 | `--logo-size` | int | — | Override logo width in device pixels, for every placement |
 | `--logo-registry` | path | `./logos/registry.yaml` | YAML registry mapping names to logo files |
+| `--gif` | flag | off | Also write a GIF alongside the MP4, from the same frames |
+| `--gif-size` | str | `800x450` | GIF pixel size, `WIDTHxHEIGHT` |
+| `--gif-fps` | int | `15` | GIF frame rate; frames above it are sampled down |
+| `--gif-colors` | int | `128` | Palette size: `64`, `128` or `256` |
+| `--gif-dither` | flag | off | Dither the palette, trading bytes for smoother gradients |
+| `--gif-loop` | int | `0` | Repeat count; `0` loops forever |
 | `--margin` | float | `0.15` | Fractional margin around the track bounding box |
 | `--bounds` | str | — | Fixed view `min_lon,min_lat,max_lon,max_lat` in degrees; overrides `--margin` |
 | `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
@@ -159,6 +165,27 @@ uv run gpx-animate my_trip.gpx --logo-marker car --logo-size 192
 ```
 
 A fully transparent image draws nothing at all.
+
+### GIF export
+
+Add `--gif` and the MP4 is written as before, with a `.gif` of the same stem
+beside it:
+
+```
+uv run gpx-animate my_trip.gpx --gif --gif-size 640x360 --gif-fps 12
+```
+
+The GIF is built from the frames the video already used, so it costs no second
+render — the only extra work is quantising to a palette. A GIF cannot hold
+30 fps cheaply, so `--gif-fps` samples the frames down (`--gif-fps 15` against a
+30 fps render keeps every other frame).
+
+Two things about the format are worth knowing. GIF stores frame delays in
+hundredths of a second and Pillow truncates what it is given, so delays are
+rounded to a whole centisecond up front: `--gif-fps 15` is written as 70 ms,
+about 14.3 fps effective. And because the hold phase repeats the final frame
+pixel for pixel, Pillow collapses those runs — a `--duration 0.3 --hold 1.0` clip
+is mostly a still image and produces a short GIF that plays for the full length.
 
 ### Where the video goes
 
@@ -233,6 +260,12 @@ a config file or the environment.
 | `logo_end` | str | *(none)* | Logo at the end point, same resolution |
 | `logo_marker` | str | *(none)* | Logo that rides the moving head marker |
 | `logo_size_px` | int | *(none)* | Override logo width in device pixels, for every placement |
+| `gif.enabled` | bool | `false` | Write a GIF alongside the MP4 |
+| `gif.size` | str | `800x450` | GIF pixel size, `WIDTHxHEIGHT` |
+| `gif.fps` | int | `15` | GIF frame rate; frames above it are sampled down |
+| `gif.colors` | int | `128` | Palette size: `64`, `128` or `256` |
+| `gif.dither` | bool | `false` | Dither the palette |
+| `gif.loop` | int | `0` | Repeat count; `0` loops forever |
 | `appearance.bg_color` | str | `#f5f5f2` | Figure background |
 | `appearance.track_faint` | str | `#b8b8b8` | The whole track, before it is drawn |
 | `appearance.track_bright` | str | `#e63946` | The part drawn so far |

@@ -27,7 +27,7 @@ src/gpx_animate/
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 100% statement **and**
   branch coverage, with a 90% floor in `[tool.coverage.report] fail_under`.
-  378 tests: 370 offline plus 8 `integration`-marked ones.
+  657 tests: 649 offline plus 8 `integration`-marked ones.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
@@ -40,6 +40,36 @@ src/gpx_animate/
   `output/` in the repo. Note `data/.gitignore` is `*` and is itself untracked,
   so anything else you drop there stays local — only the GPX is versioned.
 - `ffmpeg` must be on `PATH` (system dep, checked in `FfmpegEncoder.encode`).
+- **`pillow` is a declared dependency** (`>=11.0.0`) because `PillowGifEncoder`
+  needs `ImagePalette.ADAPTIVE` and `Image.Dither` from Pillow 11. It used to
+  arrive transitively via matplotlib, which is not a promise matplotlib makes.
+- **GIF frames are found by `FRAME_GLOB = "frame_*.png"`, not a printf pattern.**
+  The ffmpeg encoder takes `"frame_%05d.png"`; handing that same string to
+  `Path.glob` matches *nothing* — `glob` has no `%d` — and every GIF fails with
+  "No frames found". The two constants look interchangeable and are not, so a
+  test pins `FRAME_GLOB` against the printf form.
+- **`frame_delay_ms` rounds to a whole centisecond, and that is not cosmetic.**
+  GIF stores delays in hundredths of a second and Pillow *truncates* what it is
+  handed. Rounding to the nearest millisecond looks more precise and is worse: a
+  15 fps request computes 67 ms, which truncates to 60 ms and plays back at
+  16.7 fps, eleven percent *faster* than asked for. Rounding to the nearest
+  centisecond gives 70 ms (~14.3 fps), under five percent slow. SPECS US-10
+  documents this; a test reads the delay back off disk rather than trusting the
+  helper.
+- **Pillow collapses runs of identical consecutive frames**, merging them and
+  summing their delays. That is correct, not a bug: hold frames are
+  pixel-identical to the last draw frame, so `--duration 0.3 --hold 1.0` is mostly
+  a still image and yields a 2-frame GIF whose second frame holds 1200 ms. The
+  log line reports frames *sampled*, not frames *written*. Do not "fix" this by
+  passing `optimize=False`.
+- **`export_video` takes `gif_encoder` as a keyword, defaulting to `None`, and
+  never imports an adapter.** The CLI injects it and is also where
+  `require_pillow()` runs, so a missing Pillow is a one-line exit before a single
+  frame is rendered. Any test double of the use case must accept the parameter.
+- **Output order is MP4, then GIF.** The MP4 is the deliverable and is written
+  first.
+- **GIF delay quantisation is measured, not assumed.** See `frame_delay_ms`
+  above; the 15 fps case is pinned end to end through a real file.
 - Basemap tiles are downloaded at render time; renders need network access.
 
 ## Commands
@@ -63,7 +93,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 370 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 649 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -83,7 +113,7 @@ there is no publish token to manage.
 | Version | Scope | Exit criteria |
 |---|---|---|
 | `0.0.0` | now: M0–M4 landed, unreleased | no tags yet |
-| `0.1.0` | SPECS M3–M6 + US-10 GIF | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
+| `0.1.0` | SPECS M3–M6 + US-5/7/10 | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
 
@@ -271,11 +301,11 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS US-8 PyQt GUI, US-10 GIF export: **not** implemented. Don't write code
-  or docs as if they exist. US-5 (logo registry), US-6 (basemap abstraction)
-  and US-7 (boundary control) are implemented as of M6 — `--logo-start|end|marker`
-  plus `--logo-registry`, `--tiff` / `--style none`, and `--bounds`
-  (`--margin` and `--bounds` are both live `RenderConfig` fields).
+- SPECS US-8 PyQt GUI and US-11 (elevation chart): **not** implemented. Don't
+  write code or docs as if they exist. US-5 (logo registry), US-6 (basemap
+  abstraction), US-7 (boundary control) and US-10 (GIF export) are implemented —
+  `--logo-start|end|marker` plus `--logo-registry`, `--tiff` / `--style none`,
+  `--bounds`, and `--gif`.
 
 ## Conventions (SPECS §6 — binding)
 

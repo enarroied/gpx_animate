@@ -13,6 +13,7 @@ from :func:`default_config` and never mutate it.
 from __future__ import annotations
 
 from gpx_animate.domain.render_config import SIZE_PRESETS
+from gpx_animate.domain.render_config import GifConfig
 from gpx_animate.domain.render_config import RenderConfig
 
 
@@ -30,4 +31,4 @@ def default_config() -> RenderConfig:
         A fresh frozen config. Being frozen, it cannot be mutated by accident;
         overrides are made with ``dataclasses.replace``.
     """
-    return RenderConfig(style=DEFAULT_BASEMAP_STYLE)
+    return RenderConfig(style=DEFAULT_BASEMAP_STYLE, gif=GifConfig())

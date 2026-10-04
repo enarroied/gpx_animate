@@ -18,6 +18,7 @@ from gpx_animate.application.ports import RenderResult
 from gpx_animate.domain.bbox import Bbox
 from gpx_animate.domain.logo import DEFAULT_LOGO_ANCHOR
 from gpx_animate.domain.logo import DEFAULT_LOGO_SIZE_PX
+from gpx_animate.domain.render_config import GifConfig
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Track
 
@@ -66,6 +67,31 @@ class FakeEncoder:
         """
         self.calls.append((frame_dir, fps, out_path))
         out_path.write_bytes(b"fake video")
+
+
+class FakeGifEncoder:
+    """A GifEncoder that records its arguments and writes a placeholder file."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, GifConfig, int, Path]] = []
+
+    def encode(
+        self,
+        frame_dir: Path,
+        config: GifConfig,
+        mp4_fps: int,
+        out_path: Path,
+    ) -> None:
+        """Record the call and create a stand-in for the GIF.
+
+        Args:
+            frame_dir: Recorded, so a caller can prove the MP4's frames were reused.
+            config: Recorded, to check the GIF settings reached the adapter.
+            mp4_fps: Recorded, to check the source rate drives the sampling stride.
+            out_path: Written to, so callers can assert it was produced.
+        """
+        self.calls.append((frame_dir, config, mp4_fps, out_path))
+        out_path.write_bytes(b"fake gif")
 
 
 class FakeBasemap:

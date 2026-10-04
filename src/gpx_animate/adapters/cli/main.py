@@ -21,10 +21,13 @@ from pathlib import Path
 from gpx_animate.adapters.basemaps.factory import build_basemap
 from gpx_animate.adapters.basemaps.factory import style_choices
 from gpx_animate.adapters.encoders.ffmpeg_encoder import FfmpegEncoder
+from gpx_animate.adapters.encoders.gif_encoder import PillowGifEncoder
+from gpx_animate.adapters.encoders.gif_encoder import require_pillow
 from gpx_animate.adapters.logos.registry import DEFAULT_REGISTRY_PATH
 from gpx_animate.adapters.logos.registry import LogoRegistry
 from gpx_animate.adapters.logos.registry import PngLogoLoader
 from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
+from gpx_animate.application.errors import GifEncodeError
 from gpx_animate.application.errors import GpxAnimateError
 from gpx_animate.application.use_cases.export_video import export_video
 from gpx_animate.application.use_cases.load_track import load_track
@@ -32,6 +35,8 @@ from gpx_animate.application.use_cases.render_animation import render_animation
 from gpx_animate.application.use_cases.resolve_output import resolve_output_path
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
+from gpx_animate.config.layers import GIF_GROUP
+from gpx_animate.config.layers import settable_keys
 from gpx_animate.config.loader import load_config
 from gpx_animate.domain.bbox import parse_bounds
 from gpx_animate.domain.render_config import RenderConfig
@@ -132,7 +137,46 @@ def build_parser() -> argparse.ArgumentParser:
         default="INFO",
         help="logging verbosity (default: %(default)s)",
     )
+    parser.add_argument(
+        "--gif",
+        action="store_true",
+        default=None,
+        help="also write a GIF",
+    )
+    parser.add_argument(
+        "--gif-size",
+        metavar="WIDTHxHEIGHT",
+        help="GIF pixel box",
+    )
+    parser.add_argument(
+        "--gif-fps",
+        type=int,
+        metavar="FPS",
+        help="GIF frame rate",
+    )
+    parser.add_argument(
+        "--gif-colors",
+        type=int,
+        metavar="COLORS",
+        help="GIF palette size (64, 128, 256)",
+    )
+    parser.add_argument(
+        "--gif-dither",
+        action="store_true",
+        default=None,
+        help="enable dithering for GIF",
+    )
+    parser.add_argument(
+        "--gif-loop",
+        type=int,
+        metavar="LOOP",
+        help="GIF loop count (0 = infinite)",
+    )
     return parser
+
+
+DEST_REMAP = {"logo_size": "logo_size_px"}
+"""Flags whose argparse dest differs from the config field they set."""
 
 
 def config_from_args(
@@ -153,36 +197,38 @@ def config_from_args(
     Returns:
         The config for this run, with ``out`` still unresolved.
     """
-    overrides = {
-        field: getattr(args, field)
-        for field in (
-            "style",
-            "tiff",
-            "duration",
-            "hold",
-            "fps",
-            "size",
-            "margin",
-            "bounds",
-            "out",
-            "force",
-            "logo_start",
-            "logo_end",
-            "logo_marker",
-            "logo_size",
-            "logo_plate_padding",
-        )
-        if getattr(args, field, None) is not None
-    }
+    # Derived from the argparse dests and the config's own fields rather than a
+    # hand-maintained list, so a new flag in build_parser is wired by
+    # construction instead of needing a second edit here to take effect.
+    settable = set(settable_keys())
+    top_level = {key for key in settable if "." not in key}
+
+    overrides: dict = {}
+    gif_overrides: dict = {}
+    for dest, value in vars(args).items():
+        if value is None:
+            # None means the flag was not given, so the layer below survives.
+            continue
+        if dest.startswith(f"{GIF_GROUP}_"):
+            gif_overrides[dest[len(GIF_GROUP) + 1 :]] = value
+        elif dest == GIF_GROUP:
+            # The bare --gif flag is the config's "enabled", not a GifConfig.
+            gif_overrides["enabled"] = value
+        elif dest in DEST_REMAP:
+            overrides[DEST_REMAP[dest]] = value
+        elif dest in top_level:
+            overrides[dest] = value
+
     if "bounds" in overrides:
         # The flag arrives as "min_lon,min_lat,max_lon,max_lat" and the domain
         # wants a box; the config-file layers coerce through the COERCERS table,
         # but flags bypass it, so the same parse happens here.
         overrides["bounds"] = parse_bounds(overrides["bounds"])
-    if "logo_size" in overrides:
-        # The flag is "logo_size" while the domain field records the pixels the
-        # size names, so the flag is remapped before it reaches the dataclass.
-        overrides["logo_size_px"] = overrides.pop("logo_size")
+
+    if gif_overrides:
+        overrides[GIF_GROUP] = dataclasses.replace(
+            base.gif if base else default_config().gif, **gif_overrides
+        )
     return dataclasses.replace(base or default_config(), **overrides)
 
 
@@ -227,13 +273,34 @@ def main(argv: list[str] | None = None) -> int:
             track.elevation_gain_m(),
         )
 
+        # Fail before the render, not after it: a missing Pillow is a one-line
+        # error, whereas discovering it once the frames are written wastes the
+        # whole pass.
+        gif_encoder = None
+        if config.gif.enabled:
+            require_pillow()
+            if config.gif.fps > config.fps:
+                # Frames cannot be invented. Checked here rather than left to the
+                # encoder, which would only find out after rendering everything.
+                raise GifEncodeError(
+                    f"gif fps ({config.gif.fps}) cannot be greater than "
+                    f"the video fps ({config.fps}); frames cannot be invented"
+                )
+            gif_encoder = PillowGifEncoder()
+
         logos = PngLogoLoader(LogoRegistry(args.logo_registry))
         renderer = MatplotlibRenderer(build_basemap(config), logos)
         encoder = FfmpegEncoder()
 
         with tempfile.TemporaryDirectory() as frame_dir:
             frames = render_animation(config, track, Path(frame_dir), renderer, logos)
-            out_path = export_video(config, frames, encoder)
+
+            out_path = export_video(
+                config,
+                frames,
+                encoder,
+                gif_encoder=gif_encoder,
+            )
     except GpxAnimateError as error:
         # Deliberate failures get a message, not a traceback.
         logger.error("%s", error)

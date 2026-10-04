@@ -22,6 +22,7 @@ from typing import runtime_checkable
 import numpy as np
 
 from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.render_config import GifConfig
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Track
 
@@ -212,3 +213,35 @@ def frames_are_sequential(paths: Sequence[Path]) -> bool:
         True if the names are ``frame_00000`` upwards with no gaps.
     """
     return [p.stem for p in paths] == [f"frame_{i:05d}" for i in range(len(paths))]
+
+
+@runtime_checkable
+class GifEncoder(Protocol):
+    """Encodes rendered frames into a GIF next to the video.
+
+    Separate from :class:`Encoder` because a GIF is not a video: it is
+    quantised to a palette, sampled down to its own frame rate, and carries a
+    loop count rather than a duration. The frames are the same ones the video
+    used, so this never triggers a second render.
+    """
+
+    def encode(
+        self,
+        frame_dir: Path,
+        config: GifConfig,
+        mp4_fps: int,
+        out_path: Path,
+    ) -> None:
+        """Write a GIF to ``out_path`` from the frames in ``frame_dir``.
+
+        Args:
+            frame_dir: The directory the renderer wrote ``frame_NNNNN.png`` into.
+            config: Output size, frame rate, palette size, dithering, and loop count.
+            mp4_fps: Frame rate the source frames were rendered at, so the
+                encoder can work out how many to drop to reach ``config.fps``.
+            out_path: Where to write the GIF.
+
+        Raises:
+            GifEncodeError: If Pillow is missing, the frames cannot be found,
+                or the file cannot be written.
+        """

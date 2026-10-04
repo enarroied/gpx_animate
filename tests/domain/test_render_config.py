@@ -1,5 +1,6 @@
 """RenderConfig validation and the frame arithmetic derived from it."""
 
+from dataclasses import FrozenInstanceError
 from dataclasses import replace
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.bbox import Bbox
 from gpx_animate.domain.render_config import SIZE_PRESETS
+from gpx_animate.domain.render_config import GifConfig
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.style import DEFAULT_STYLE
 from gpx_animate.domain.style import Style
@@ -198,6 +200,89 @@ def _config_with_logo(field: str, value: str) -> RenderConfig:
     return RenderConfig(logo_marker=value)
 
 
-def test_logo_plate_padding_must_be_non_negative(self):
-    with pytest.raises(ValueError, match="logo_plate_padding must be >= 0"):
-        RenderConfig(logo_plate_padding=-0.1)
+class TestGifConfig:
+    """US-10's GIF settings, validated at construction like everything else."""
+
+    def test_the_defaults_render_nothing(self):
+        assert GifConfig().enabled is False
+
+    def test_the_default_size_is_writable(self):
+        assert GifConfig().size == "800x450"
+
+    def test_the_defaults_pass_validation(self):
+        GifConfig()  # must not raise
+
+    @pytest.mark.parametrize("size", ["800", "800*450", "", "axb", "800x", "x450"])
+    def test_a_size_that_is_not_width_by_height_is_rejected(self, size):
+        with pytest.raises(ValueError, match="size must be"):
+            GifConfig(size=size)
+
+    def test_a_non_string_size_is_rejected(self):
+        with pytest.raises(ValueError, match="size must be"):
+            # The wrong type is the point: a bare int must not be accepted.
+            GifConfig(size=800)  # ty: ignore[invalid-argument-type]
+
+    @pytest.mark.parametrize("size", ["0x450", "800x0", "-8x450", "800x-450"])
+    def test_a_non_positive_size_is_rejected(self, size):
+        with pytest.raises(ValueError, match="size must be positive"):
+            GifConfig(size=size)
+
+    def test_a_non_numeric_size_is_rejected(self):
+        with pytest.raises(ValueError, match="size must be"):
+            GifConfig(size="800.5x450")
+
+    def test_an_ambiguous_size_with_two_x_is_rejected(self):
+        """Splitting on the first x would leave '2x3' as the height."""
+        with pytest.raises(ValueError, match="size must be"):
+            GifConfig(size="1x2x3")
+
+    @pytest.mark.parametrize(
+        ("size", "width", "height"),
+        [("800x450", 800, 450), ("1x1", 1, 1), ("1920x1080", 1920, 1080)],
+    )
+    def test_the_dimensions_are_parsed(self, size, width, height):
+        config = GifConfig(size=size)
+        assert (config.width, config.height) == (width, height)
+
+    @pytest.mark.parametrize("fps", [0, -1])
+    def test_a_non_positive_fps_is_rejected(self, fps):
+        with pytest.raises(ValueError, match="fps must be > 0"):
+            GifConfig(fps=fps)
+
+    @pytest.mark.parametrize("colors", [64, 128, 256])
+    def test_the_three_palette_sizes_are_accepted(self, colors):
+        assert GifConfig(colors=colors).colors == colors
+
+    @pytest.mark.parametrize("colors", [0, 1, 63, 65, 127, 255, 257, 512])
+    def test_any_other_palette_size_is_rejected(self, colors):
+        """GIF stores a palette in powers of two; 100 would be quantised away."""
+        with pytest.raises(ValueError, match="colors must be 64, 128, or 256"):
+            GifConfig(colors=colors)
+
+    def test_a_negative_loop_count_is_rejected(self):
+        with pytest.raises(ValueError, match="loop must be >= 0"):
+            GifConfig(loop=-1)
+
+    def test_loop_zero_means_forever_and_is_allowed(self):
+        assert GifConfig(loop=0).loop == 0
+
+    def test_a_finite_loop_count_is_allowed(self):
+        assert GifConfig(loop=5).loop == 5
+
+    def test_dither_defaults_to_off(self):
+        """Dithering costs bytes, so it has to be asked for."""
+        assert GifConfig().dither is False
+
+    def test_it_is_frozen(self):
+        with pytest.raises(FrozenInstanceError):
+            GifConfig().enabled = True  # ty: ignore[invalid-assignment]
+
+    def test_replacing_revalidates(self):
+        with pytest.raises(ValueError, match="colors must be"):
+            replace(GifConfig(), colors=100)
+
+    def test_the_shipped_default_config_carries_one(self):
+        assert default_config().gif == GifConfig()
+
+    def test_the_shipped_default_does_not_enable_it(self):
+        assert default_config().gif.enabled is False

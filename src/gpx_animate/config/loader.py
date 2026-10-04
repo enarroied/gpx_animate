@@ -28,6 +28,7 @@ from typing import Any
 from gpx_animate.config import layers
 from gpx_animate.config.defaults import default_config
 from gpx_animate.config.layers import APPEARANCE_GROUP
+from gpx_animate.config.layers import GIF_GROUP
 from gpx_animate.config.layers import PROJECT_CONFIG_NAME
 from gpx_animate.config.layers import ConfigError
 from gpx_animate.domain.bbox import Bbox
@@ -109,6 +110,12 @@ COERCERS: dict[str, Callable[[Any], Any]] = {
     "output_dir": _to_path,
     "tiff": _to_optional_path,
     "bounds": _to_bounds,
+    "gif.fps": int,
+    "gif.colors": int,
+    "gif.loop": int,
+    "gif.dither": _to_bool,
+    "gif.enabled": _to_bool,
+    "profile_height": float,
 }
 """How each non-string key is converted. Everything else is a string."""
 
@@ -159,6 +166,11 @@ def apply_overrides(base: RenderConfig, overrides: Mapping[str, Any]) -> RenderC
         for key, value in overrides.items()
         if key.startswith(f"{APPEARANCE_GROUP}.")
     }
+    gif = {
+        key.split(".", 1)[1]: value
+        for key, value in overrides.items()
+        if key.startswith(f"{GIF_GROUP}.")
+    }
     if isinstance(top_level.get(APPEARANCE_GROUP), Mapping):
         # Without this the dataclass field would be quietly replaced by a dict,
         # and the renderer would fail much later with a much worse message.
@@ -166,8 +178,15 @@ def apply_overrides(base: RenderConfig, overrides: Mapping[str, Any]) -> RenderC
             f"{APPEARANCE_GROUP} must be given as dotted keys such as "
             f"{APPEARANCE_GROUP}.font, not as a nested table"
         )
+    if isinstance(top_level.get(GIF_GROUP), Mapping):
+        raise ConfigError(
+            f"{GIF_GROUP} must be given as dotted keys such as "
+            f"{GIF_GROUP}.fps, not as a nested table"
+        )
     if appearance:
         top_level[APPEARANCE_GROUP] = dataclasses.replace(base.appearance, **appearance)
+    if gif:
+        top_level[GIF_GROUP] = dataclasses.replace(base.gif, **gif)
     return dataclasses.replace(base, **top_level)
 
 

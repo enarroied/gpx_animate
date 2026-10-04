@@ -46,3 +46,7 @@ class LogoUnreadableError(GpxAnimateError, OSError):
 
 class LogoRegistryError(GpxAnimateError, ValueError):
     """``logos/registry.yaml`` is present but cannot be used as written."""
+
+
+class GifEncodeError(GpxAnimateError, RuntimeError):
+    """A GIF could not be encoded, usually because Pillow is not installed."""
