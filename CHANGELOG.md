@@ -8,14 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!--
 Housekeeping rule: every user-visible change updates this file in the same
 commit. At a release, rename "Unreleased" to "<version> - <YYYY-MM-DD>", add a
-  compare link below, and open a GitHub Release from that section. Compare links
-  are added at release time; there are no tags yet.
+  compare link below, and open a GitHub Release from that section.
+Compare links are added at release time. The first release has no v0.0.0 tag to
+  compare against, so v0.1.0 links to its own tag page rather than a compare URL
+  that would 404.
 See AGENTS.md -> Versioning & releases.
 -->
 
 ## [Unreleased]
 
-Nothing has been released yet. Current state of the project:
+Nothing yet.
+
+## [0.1.0] - 2026-10-04
+
+First release. There is no PyPI package — install from the GitHub tag:
+
+```
+uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx
+```
+
+Everything below accumulated since the project began, so this section covers the
+whole feature set rather than a delta.
 
 - **Added GIF export.** `--gif` writes a `.gif` beside the MP4 from the frames
   the video already used, so there is no second render. `--gif-size`,
@@ -31,7 +44,6 @@ Nothing has been released yet. Current state of the project:
   videos share one progress helper so they stay frame-for-frame alignable.
   Shared drawing code lives in `elevation_chart.py`, used by both the overlay
   and a standalone `ProfileRenderer`.
-
 - Installed package (`gpx_animate`) with a `gpx-animate` console entry point:
   `uv run gpx-animate <trip.gpx>`. The single-file script is gone; rendering output
   is unchanged, frame for frame.
@@ -74,14 +86,16 @@ Nothing has been released yet. Current state of the project:
   `--logo-position` flags are gone**, replaced by the three point-anchored flags; the same
   three fields replace `logo` / `logo_position` in config files and the environment.
 - New: `--logo-size <px>` overrides the width of every logo placement in one render
-  (registry sizes describe a logo, the flag describes a render), and every visible logo now
-  sits on a rounded white backplate so it reads over a busy basemap. A fully transparent
-  image still draws nothing. `logo_size_px` is settable in config files and the
-  environment too.
-- New: `--logo-plate-padding` controls logo backplate padding (default `0.0` = no plate).
-  When padding > 0, visible logos sit on a rounded white backplate.
+  (registry sizes describe a logo, the flag describes a render). `logo_size_px` is settable
+  in config files and the environment too.
+- New: `--logo-plate-padding <frac>` draws a rounded white plate behind every visible logo
+  so it reads over a busy basemap, and sets the plate's padding. **Default `0.0` = no
+  plate**, so an out-of-the-box render shows exactly the logo image; raise it to opt in. A
+  fully transparent image still draws nothing — otherwise it would print a blank plate.
 - **Behaviour change:** Default logo size increased to 96px (was 48px). Bare-path logos and
   registry defaults without explicit size use the larger default.
 - **Behaviour change:** When logos are used, frames are saved with transparent background
   (alpha channel) so the video background is transparent in outputs that support it.
-- Specified in `SPECS.md` but not implemented: PyQt GUI (US-8), GIF export (US-10).
+- Specified in `SPECS.md` but still not implemented: the PyQt GUI (US-8).
+
+[0.1.0]: https://github.com/enarroied/gpx_animate/releases/tag/v0.1.0

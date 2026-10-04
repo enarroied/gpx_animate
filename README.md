@@ -160,9 +160,16 @@ Anchors are named as *side on x* and *side on y* from `left`, `center`, `right`
 and `above`, `center`, `below`. The image keeps its aspect; `default_size_px`
 is the width.
 
-Every visible logo sits on a rounded white plate so it reads even over busy
-terrain. `--logo-size <px>` overrides the size for **all** placements at once
-(registry sizes describe the logo, the flag describes one render):
+Every visible logo can sit on a rounded white plate so it reads even over busy
+terrain. The plate is **off by default**; `--logo-plate-padding <frac>` turns it
+on and sets its padding, so the default render is exactly the logo image:
+
+```
+uv run gpx-animate my_trip.gpx --logo-marker car --logo-plate-padding 0.04
+```
+
+`--logo-size <px>` overrides the size for **all** placements at once (registry
+sizes describe the logo, the flag describes one render):
 
 ```
 uv run gpx-animate my_trip.gpx --logo-marker car --logo-size 192

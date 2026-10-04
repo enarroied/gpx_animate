@@ -115,7 +115,7 @@ there is no publish token to manage.
 
 | Version | Scope | Exit criteria |
 |---|---|---|
-| `0.0.0` | now: M0–M7 + US-5/7/10/11 landed, unreleased | no tags yet |
+| `0.0.0` | released as `v0.1.0`: M0–M7 + US-5/7/10/11 landed | ✅ tag `v0.1.0` (2026-10-04) |
 | `0.1.0` | first release: the above | `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
