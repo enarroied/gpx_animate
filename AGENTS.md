@@ -115,10 +115,15 @@ there is no publish token to manage.
 
 | Version | Scope | Exit criteria |
 |---|---|---|
-| `0.0.0` | now: M0–M4 landed, unreleased | no tags yet |
-| `0.1.0` | SPECS M3–M6 + US-5/7/10/11 | `uvx gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
+| `0.0.0` | now: M0–M7 + US-5/7/10/11 landed, unreleased | no tags yet |
+| `0.1.0` | first release: the above | `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
+
+There is no PyPI release, so the acceptance check for a tagged version is
+`uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx`,
+not bare `uvx gpx-animate` — that form resolves against PyPI and would 404.
+`uvx --from . gpx-animate` works locally against a checkout.
 
 The GUI is its own minor bump because it is a *new adapter* over a frozen
 application layer — new capability, no breaking change. M0–M2 is invisible to

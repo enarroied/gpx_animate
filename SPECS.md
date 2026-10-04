@@ -69,36 +69,48 @@ Concrete package layout:
 ```
 src/gpx_animate/
 ├── domain/
-│   ├── track.py            # Track, Point, distance helpers
-│   ├── style.py            # Style dataclass (colors, fonts, logo spec)
-│   └── render_config.py    # RenderConfig (durations, fps, size, …)
+│   ├── track.py            # Track, Point, haversine, cumulative distance
+│   ├── style.py            # Style dataclass (colors, fonts)
+│   ├── render_config.py    # RenderConfig, GifConfig, SIZE_PRESETS, PROFILE_POSITIONS
+│   ├── logo.py             # Logo anchors and sizes
+│   └── bbox.py             # pure bounds arithmetic (no rasterio)
 ├── application/
-│   ├── ports.py            # Protocols: BasemapProvider, FrameRenderer, Encoder, LogoLoader
+│   ├── ports.py            # Protocols: TrackLoader, BasemapProvider, FrameRenderer,
+│   │                       #   Encoder, GifEncoder, LogoLoader
 │   ├── use_cases/
 │   │   ├── load_track.py
 │   │   ├── render_animation.py
-│   │   └── export_video.py
+│   │   ├── export_video.py
+│   │   └── resolve_output.py
 │   └── errors.py
 ├── adapters/
 │   ├── basemaps/
 │   │   ├── tiles.py        # contextily-based
-│   │   ├── tiff.py         # rioxarray / rasterio
+│   │   ├── tiff.py         # rasterio
 │   │   ├── none.py         # blank background
-│   │   └── hillshade.py    # DEM-based (v2)
+│   │   └── factory.py      # --style / --tiff dispatch
 │   ├── renderers/
-│   │   └── matplotlib_renderer.py
+│   │   ├── matplotlib_renderer.py  # map frames + chart inset
+│   │   ├── elevation_chart.py      # shared chart drawing + geometry
+│   │   └── profile_renderer.py     # standalone chart video
 │   ├── encoders/
-│   │   └── ffmpeg_encoder.py
+│   │   ├── ffmpeg_encoder.py
+│   │   └── gif_encoder.py   # Pillow
 │   ├── logos/
-│   │   └── registry.py     # reads /logos/registry.yaml
+│   │   └── registry.py     # reads logos/registry.yaml
 │   ├── cli/
-│   │   └── main.py         # click-based
+│   │   └── main.py         # argparse
 │   └── gui/                # PyQt (v2, stub first)
 │       └── main.py
-├── config/
-│   ├── defaults.py         # CONFIG dict, STYLES, SIZES, LOGO_SPECS
-│   └── settings.py         # loads env, ~/.config/gpx-animate.toml
-└── __init__.py
+└── config/
+    ├── defaults.py         # default_config() -> RenderConfig
+    ├── layers.py           # one layer: defaults / user / project / env
+    └── loader.py           # reads + coerces those layers
+```
+
+Not yet built, listed here so the target layout is unambiguous: a DEM-based
+`basemaps/hillshade.py` (M9, separate spec) and the real PyQt window behind
+`adapters/gui/main.py` (M8).
 ```
 
 ---
@@ -212,9 +224,16 @@ repos:
   3. Project-local `gpx-animate.toml`
   4. Environment variables (`GPX_ANIMATE_*`)
   5. CLI flags / GUI widgets (highest priority)
-- **Never mutate** the defaults dict — copy per run.
+- **Defaults are frozen dataclasses**, not a dict — `RenderConfig` and `Style`
+  fields, composed by `default_config()`. Overrides go through
+  `dataclasses.replace`, which re-runs `__post_init__` validation, so a bad
+  override is rejected where it is written rather than at render time.
 - Nested groups are TOML tables and env-var sub-keys, e.g. `gif.colors` lives in
   `[gif]` in the toml layers and in `GPX_ANIMATE_GIF_COLORS` in the environment.
+- The settable-key set is **derived** from the dataclass fields, not hand-listed,
+  so a new domain field is settable in both the files and the environment with no
+  second list to keep in sync. Unknown keys are errors: a typo like `durtaion` is
+  reported with the list of valid keys, never ignored.
 - Every config key must be documented in `README.md` and referenceable by an agent.
 
 ---
@@ -378,29 +397,35 @@ in the tens of megabytes for a few seconds of animation, which is slow to
 encode, slow to upload, and slow for a reader to load. Every knob below exists
 to keep it small.
 
-**Defaults** — in `config/defaults.py` as `GIF_DEFAULTS`, overridable via the
-`[gif]` table in the toml layers and per-flag on the CLI:
+**Defaults** — as the frozen `GifConfig` dataclass in `domain/render_config.py`,
+composed into `default_config()` and overridable via the `[gif]` table in the
+toml layers and per-flag on the CLI:
 
 ```python
-GIF_DEFAULTS = {
-    "enabled": False,
-    "size": "800x450",   # px, independent of the SIZES aspect presets
-    "fps": 15,           # half the MP4 rate is fine
-    "colors": 128,       # 64 | 128 | 256
-    "dither": False,     # off = smaller
-    "loop": 0,           # 0 = infinite
-}
+@dataclass(frozen=True)
+class GifConfig:
+    enabled: bool = False
+    size: str = "800x450"   # px, independent of the SIZES aspect presets
+    fps: int = 15            # half the MP4 rate is fine
+    colors: int = 128        # 64 | 128 | 256
+    dither: bool = False     # off = smaller
+    loop: int = 0            # 0 = infinite
 ```
 
 **Acceptance criteria:**
 - `enabled` defaults to `False`: no GIF is written unless asked. The MP4 is
   always produced, and **the MP4 encode is untouched** — CRF 18, `yuv420p`, full
   `dpi`. Every quality reduction applies to the GIF only.
-- Implemented as a second `Encoder` adapter (`adapters/encoders/gif_encoder.py`) —
-  no new port, no duplicated frame logic.
+- Implemented behind a new `GifEncoder` port (`application/ports.py`), with
+  `PillowGifEncoder` (`adapters/encoders/gif_encoder.py`) as the adapter. The use
+  case takes it as a keyword and imports no adapter; the CLI injects it and runs
+  `require_pillow()` up front, so a missing Pillow is a one-line exit rather than
+  a failure after the whole render. No duplicated frame logic.
 - Encoded from the same PNG frames as the MP4, and before the temp dir is cleaned
-  up: MP4 first, GIF second. The frames are **downscaled, not re-rendered** — a
-  second render pass would cost more than it saves.
+  up. Order is **MP4, then the chart video if `--chart-video` was asked for, then
+  the GIF** — the MP4 is the deliverable, so it is written first. The frames are
+  **downscaled, not re-rendered** — a second render pass would cost more than it
+  saves.
 - `size` is honoured exactly as `WIDTHxHEIGHT`, independent of `SIZES`. Frames
   are scaled to *cover* the box and center-cropped (`ImageOps.fit`), so a `9:16`
   MP4 into an `800x450` GIF crops rather than distorts. Invalid or unparsable
@@ -422,6 +447,57 @@ GIF_DEFAULTS = {
   palette size, dither on/off, loop value, `enabled = False` writes no file,
   invalid `size`/`colors`/`fps` rejected, and **MP4 encoder arguments unchanged
   when the GIF is enabled**.
+
+### US-11 — Elevation chart as an overlay and a second video
+**As an** viewer, **I want** the elevation profile visible while the track draws
+**so that** I can see the climbs ahead of where the marker is, and — as an editor
+— **I want** the chart as its own video **so that** I can cut it in separately.
+
+**Acceptance criteria:**
+
+- `--profile` places the chart over the map. Positions are `off`, `top`, `bottom`,
+  `top-left`, `top-right`, `bottom-left`, `bottom-right`.
+- `--profile-width` and `--profile-height` size it as fractions of the frame.
+  The `top` and `bottom` strips span the full width and therefore **ignore**
+  `--profile-width`; only the corner panels are width-constrained.
+- **The whole curve is drawn once, with a cursor indicating progress.** This is
+  intended behaviour, not a shortcut: the chart is a static readout of the shape
+  being travelled, with a moving indicator, so nothing needs recomputing per frame
+  except the cursor's position. Axes are therefore fixed to the full track and the
+  profile never rescales mid-animation. A progressive reveal — clipping the curve
+  to the current distance so it builds up — is a *different* design and is not
+  what ships; if it is ever wanted it is a change to this section, not a bug fix.
+- `PROFILE_POSITIONS` in `domain/render_config.py` is the single source of truth
+  for allowed values, as a **mutable dict** of `position -> (loc, x_anchor,
+  y_anchor)`. Validation, `--profile`'s choices and the geometry all read from it,
+  so adding a position needs no edit elsewhere. It is a dict on purpose: the two
+  anchors are read independently so a corner needs no special-casing, a centre
+  anchor centres the panel, and tests `setitem` a middle-anchored entry to pin that
+  centring rule. `FULL_WIDTH_PROFILE_POSITIONS` picks out the strips that span the
+  frame.
+- `--chart-video` **also** writes the chart as its own video, independently of
+  `--profile` — either, both, or neither are valid.
+- The sibling is named `<stem>-chart<suffix>`, derived rather than run through
+  `resolve_output`, so a numbered main render does not consume a second number and
+  an existing chart is overwritten rather than pushed aside.
+- **The two videos must be frame-lockable**, which is the point of the second
+  video. `revealed_point_count(index, n_draw_frames, n_total)` is shared by both
+  renderers — a test asserts the map renderer uses the *same function object*,
+  since behaviour-identical copies would pass every frame-count test while quietly
+  drifting. Same size, dpi, fps, duration and hold for both.
+- Drawing lives once, in `adapters/renderers/elevation_chart.py`, used both as an
+  inset over the map and as the body of a standalone `ProfileRenderer`. Only the
+  geometry differs. Three `inset_axes` traps make the sharing worth it, all
+  silent: `from_any(0.28)` is 0.28 *points* (use `"28%"`), a child sized twice
+  squares the fraction, and `tight_layout()` refuses to lay out insets at all — so
+  the inset is created after it has run.
+- The panel gets a backing plate. That is not decoration: drawn straight over tile
+  texture with no plate, a hairline curve is effectively invisible.
+- Requesting a chart video without chart frames → `ChartFramesMissingError`,
+  surfaced as a message and exit code 1.
+- Tests: each position's anchors and rect, full-width strips ignoring
+  `--profile-width`, the whole-curve-plus-cursor contract, shared-helper identity,
+  and both videos landing on the same moment per frame.
 
 ---
 
@@ -470,7 +546,9 @@ class RenderConfig:
     logo_marker: str | None
     gif: GifConfig
     profile: str
+    profile_width: float
     profile_height: float
+    chart_video: bool
     # …colors, fonts, output_dir, force
 
 @dataclass(frozen=True)
@@ -507,14 +585,18 @@ Options:
   --logo-marker TEXT
   --out PATH                Output file (default: ./output/<stem>__<ts>.mp4)
   --force                   Overwrite if --out exists
-  --gif [PATH]              Also write a GIF (enables [gif] in config)
+  --gif                      Also write a GIF (enables [gif] in config)
   --gif-size WIDTHxHEIGHT   GIF pixel box, independent of --size [default: 800x450]
   --gif-fps INTEGER         GIF frame rate, must be <= fps [default: 15]
   --gif-colors [64|128|256] GIF palette size [default: 128]
   --gif-dither / --no-gif-dither   [default: off]
   --gif-loop INTEGER        GIF loop count, 0 = forever [default: 0]
-  --profile [off|top|bottom]  Elevation profile position [default: off]
-  --profile-height FLOAT       Height of profile as fraction of frame height [default: 0.15]
+  --profile [off|top|bottom|top-left|top-right|bottom-left|bottom-right]
+                             Elevation chart position [default: off]
+  --profile-width FRAC      Chart width as fraction of frame width; ignored by the
+                             full-width top and bottom strips [default: 0.28]
+  --profile-height FRAC     Chart height as fraction of frame height [default: 0.15]
+  --chart-video             Also write the elevation chart as its own video
 
   --log-level [DEBUG|INFO|WARNING|ERROR]
   --help
@@ -524,19 +606,23 @@ Options:
 
 ## 10. Milestones (suggested order for an agent)
 
-1. **M0 — Tooling**: uv, ruff, ty, vulture, pre-commit, CI. Separate commit.
-2. **M1 — Tests first**: pytest scaffolding, tests for the current monolith.
-3. **M2 — Hexagonal refactor**: domain → application → adapters. Tests still green.
-4. **M3 — Timestamped outputs** (US-4).
-5. **M4 — Basemap abstraction** (US-6) + `--tiff` + `--style none`.
-6. **M5 — Logo system** (US-5).
-7. **M6 — Boundary control** (US-7).
-8. **M7 — SPECS.md + AGENTS.md polish** (US-9).
-9. **M8 — PyQt GUI** (US-8).
+1. **M0 — Tooling**: uv, ruff, ty, vulture, pre-commit, CI. Separate commit. ✅
+2. **M1 — Tests first**: pytest scaffolding, tests for the current monolith. ✅
+3. **M2 — Hexagonal refactor**: domain → application → adapters. Tests still green. ✅
+4. **M3 — Timestamped outputs** (US-4). ✅
+5. **M4 — Basemap abstraction** (US-6) + `--tiff` + `--style none`. ✅
+6. **M5 — Logo system** (US-5). ✅
+7. **M6 — Boundary control** (US-7). ✅
+8. **M7 — SPECS.md + AGENTS.md polish** (US-9). ✅
+9. **M8 — PyQt GUI** (US-8). Not started: `adapters/gui/main.py` is a stub.
 10. **M9 — Hillshade / 3D TIFF** (future, separate spec).
-11. **M10 — GIF export** (US-10). Independent of the other milestones; can land
-    any time after M2, since it only needs the `Encoder` port. Ships after M4 so
-    the `none` basemap provider is available for cheap, fast test renders.
+11. **M10 — GIF export** (US-10). Independent of the other milestones; landed any
+    time after M2, since it only needs the `Encoder` port. Shipped after M4 so the
+    `none` basemap provider was available for cheap, fast test renders. ✅
+12. **M11 — Elevation chart** (US-11). Like M10, independent of the ordered
+    milestones above: it needs the frame renderer and nothing else new. ✅
+
+✅ = landed and covered by tests.
 
 ---
 
