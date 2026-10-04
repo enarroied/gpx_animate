@@ -15,25 +15,12 @@ import argparse
 import dataclasses
 import logging
 import sys
-import tempfile
 from pathlib import Path
 
-from gpx_animate.adapters.basemaps.factory import build_basemap
 from gpx_animate.adapters.basemaps.factory import style_choices
-from gpx_animate.adapters.encoders.ffmpeg_encoder import FfmpegEncoder
-from gpx_animate.adapters.encoders.gif_encoder import PillowGifEncoder
-from gpx_animate.adapters.encoders.gif_encoder import require_pillow
 from gpx_animate.adapters.logos.registry import DEFAULT_REGISTRY_PATH
-from gpx_animate.adapters.logos.registry import LogoRegistry
-from gpx_animate.adapters.logos.registry import PngLogoLoader
-from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
-from gpx_animate.adapters.renderers.profile_renderer import ProfileRenderer
-from gpx_animate.application.errors import GifEncodeError
+from gpx_animate.adapters.pipeline import render_to_video
 from gpx_animate.application.errors import GpxAnimateError
-from gpx_animate.application.use_cases.export_video import export_video
-from gpx_animate.application.use_cases.load_track import load_track
-from gpx_animate.application.use_cases.render_animation import render_animation
-from gpx_animate.application.use_cases.resolve_output import resolve_output_path
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
 from gpx_animate.config.layers import GIF_GROUP
@@ -291,56 +278,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # Layers 1 to 4 of SPECS section 5; the flags are layer 5.
         config = config_from_args(args, load_config(Path.cwd()))
-        # Resolve the destination before rendering, so an unwritable path costs
-        # nothing instead of a full render's worth of tiles and frames.
-        config = dataclasses.replace(config, out=resolve_output_path(config, args.gpx))
-        track = load_track(args.gpx)
-        logger.info(
-            "%d points, route %r, %.1f km, %d m of climbing",
-            len(track.points),
-            track.name,
-            track.total_distance_km(),
-            track.elevation_gain_m(),
-        )
-
-        # Fail before the render, not after it: a missing Pillow is a one-line
-        # error, whereas discovering it once the frames are written wastes the
-        # whole pass.
-        gif_encoder = None
-        if config.gif.enabled:
-            require_pillow()
-            if config.gif.fps > config.fps:
-                # Frames cannot be invented. Checked here rather than left to the
-                # encoder, which would only find out after rendering everything.
-                raise GifEncodeError(
-                    f"gif fps ({config.gif.fps}) cannot be greater than "
-                    f"the video fps ({config.fps}); frames cannot be invented"
-                )
-            gif_encoder = PillowGifEncoder()
-
-        logos = PngLogoLoader(LogoRegistry(args.logo_registry))
-        renderer = MatplotlibRenderer(build_basemap(config), logos)
-        encoder = FfmpegEncoder()
-
-        with tempfile.TemporaryDirectory() as frame_dir:
-            frames = render_animation(config, track, Path(frame_dir), renderer, logos)
-
-            chart_frames = None
-            if config.chart_video:
-                chart_renderer = ProfileRenderer()
-                chart_dir = Path(frame_dir).parent / "chart_frames"
-                chart_dir.mkdir(parents=True, exist_ok=True)
-                chart_frames = render_animation(
-                    config, track, chart_dir, chart_renderer, logos
-                )
-
-            out_path = export_video(
-                config,
-                frames,
-                encoder,
-                gif_encoder=gif_encoder,
-                chart_frames=chart_frames,
-            )
+        # Everything past this line is front-end independent and lives in
+        # adapters.pipeline, so the GUI renders through the same wiring instead
+        # of copying it. What stays here is only what is the CLI's own business:
+        # parsing arguments, configuring logging, and turning a deliberate
+        # failure into an exit code. The "Done" line is logged by the pipeline,
+        # not here, so the GUI's log pane gets it too and this does not double it.
+        render_to_video(config, args.gpx, logo_registry=args.logo_registry)
     except GpxAnimateError as error:
         # Deliberate failures get a message, not a traceback.
         logger.error("%s", error)
@@ -349,7 +293,6 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("%s", error)
         return 1
 
-    logger.info("Done: %s", out_path)
     return 0
 
 

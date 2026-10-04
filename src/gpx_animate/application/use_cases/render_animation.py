@@ -31,7 +31,8 @@ def render_animation(
         config: Validated render settings.
         track: The track to animate.
         out_dir: Directory for the frames. The caller owns its lifetime, which
-            is why the temporary directory lives in the CLI adapter.
+            is why the temporary directory lives in
+            :mod:`gpx_animate.adapters.pipeline` rather than here.
         renderer: The port implementation that does the drawing.
         logos: The logo port, when the caller has one. Supplying it makes this
             use case resolve every requested logo up front, so a mistyped name

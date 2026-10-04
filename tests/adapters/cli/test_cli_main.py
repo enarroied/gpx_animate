@@ -7,6 +7,7 @@ from pathlib import Path
 import gpxpy.gpx
 import pytest
 
+from gpx_animate.adapters import pipeline
 from gpx_animate.adapters.basemaps.factory import style_choices
 from gpx_animate.adapters.basemaps.tiles import available_styles
 from gpx_animate.adapters.cli import main as cli
@@ -93,8 +94,8 @@ def recorder(monkeypatch):
     trigger genuine errors instead of simulated ones.
     """
     recorder = Recorder()
-    monkeypatch.setattr(cli, "render_animation", recorder.render)
-    monkeypatch.setattr(cli, "export_video", recorder.export)
+    monkeypatch.setattr(pipeline, "render_animation", recorder.render)
+    monkeypatch.setattr(pipeline, "export_video", recorder.export)
     return recorder
 
 
@@ -366,9 +367,9 @@ class TestLogoResolution:
         ) -> Path:
             return config.out
 
-        monkeypatch.setattr(cli, "render_animation", real_render_animation)
-        monkeypatch.setattr(cli, "MatplotlibRenderer", lambda basemap, logos: fake)
-        monkeypatch.setattr(cli, "export_video", fake_encode)
+        monkeypatch.setattr(pipeline, "render_animation", real_render_animation)
+        monkeypatch.setattr(pipeline, "MatplotlibRenderer", lambda basemap, logos: fake)
+        monkeypatch.setattr(pipeline, "export_video", fake_encode)
         return fake
 
     def test_a_missing_logo_exits_one_before_rendering(
@@ -638,7 +639,7 @@ class TestGifFlags:
         def no_pillow():
             raise GifEncodeError("Pillow is required to encode GIFs")
 
-        monkeypatch.setattr(cli, "require_pillow", no_pillow)
+        monkeypatch.setattr(pipeline, "require_pillow", no_pillow)
         rc = run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--gif")
         assert rc == 1
         assert recorder.rendered == 0
@@ -651,7 +652,7 @@ class TestGifFlags:
         def no_pillow():
             raise AssertionError("require_pillow must not be called")
 
-        monkeypatch.setattr(cli, "require_pillow", no_pillow)
+        monkeypatch.setattr(pipeline, "require_pillow", no_pillow)
         assert run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4")) == 0
 
     def test_a_missing_pillow_reports_a_message_not_a_traceback(
@@ -660,7 +661,7 @@ class TestGifFlags:
         def no_pillow():
             raise GifEncodeError("Pillow is required to encode GIFs")
 
-        monkeypatch.setattr(cli, "require_pillow", no_pillow)
+        monkeypatch.setattr(pipeline, "require_pillow", no_pillow)
         run(str(short_track_gpx), "--out", str(tmp_path / "v.mp4"), "--gif")
         assert "Pillow is required" in capsys.readouterr().out
 
