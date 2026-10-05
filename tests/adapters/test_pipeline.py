@@ -234,3 +234,71 @@ class TestRenderToVideo:
 
         assert len(stub_render) == 1
         assert (tmp_path / "clip.gif").exists()
+
+
+def test_both_frame_sets_live_under_one_temporary_directory(
+    monkeypatch, fast_config, track
+):
+    """A chart render used to write to a fixed /tmp/chart_frames.
+
+    That leaked every frame of every chart render, and made two concurrent
+    renders -- a CLI run and a GUI run, say -- share one directory. Both frame
+    sets are now subdirectories of a single TemporaryDirectory, so cleanup is
+    automatic and they cannot collide.
+    """
+    seen: dict[str, Path] = {}
+    chart_config = dataclasses.replace(fast_config, chart_video=True)
+
+    def fake_render(config, track, out_dir, renderer, logos=None):
+        seen["dir"] = out_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return RenderResult(frame_dir=out_dir, frame_paths=(), frame_count=1)
+
+    monkeypatch.setattr(pipeline, "load_track", lambda path: track)
+    monkeypatch.setattr(pipeline, "render_animation", fake_render)
+    monkeypatch.setattr(pipeline, "build_basemap", lambda config: object())
+    monkeypatch.setattr(pipeline, "MatplotlibRenderer", lambda basemap, logos: object())
+    monkeypatch.setattr(pipeline, "ProfileRenderer", object)
+    monkeypatch.setattr(pipeline, "FfmpegEncoder", object)
+    monkeypatch.setattr(pipeline, "build_gif_encoder", lambda config: None)
+    monkeypatch.setattr(pipeline, "export_video", lambda *a, **k: Path("out.mp4"))
+
+    pipeline.render_to_video(chart_config, Path("t.gpx"))
+
+    # Both passes wrote below the same temporary root, and it is gone now.
+    assert not seen["dir"].exists(), "the frame directory outlived the render"
+    assert seen["dir"].name in {"frames", "chart"}
+
+
+def test_the_chart_frame_directory_is_not_a_sibling_of_the_map_frames(
+    monkeypatch, fast_config, track
+):
+    """The encoder globs non-recursively, so a subdirectory cannot be misread.
+
+    If the map encoder ever saw the chart's PNGs as its own frames the output
+    would be a video that alternated map and chart.
+    """
+    dirs: list[Path] = []
+
+    def fake_render(config, track, out_dir, renderer, logos=None):
+        dirs.append(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return RenderResult(frame_dir=out_dir, frame_paths=(), frame_count=1)
+
+    monkeypatch.setattr(pipeline, "load_track", lambda path: track)
+    monkeypatch.setattr(pipeline, "render_animation", fake_render)
+    monkeypatch.setattr(pipeline, "build_basemap", lambda config: object())
+    monkeypatch.setattr(pipeline, "MatplotlibRenderer", lambda basemap, logos: object())
+    monkeypatch.setattr(pipeline, "ProfileRenderer", object)
+    monkeypatch.setattr(pipeline, "FfmpegEncoder", object)
+    monkeypatch.setattr(pipeline, "build_gif_encoder", lambda config: None)
+    monkeypatch.setattr(pipeline, "export_video", lambda *a, **k: Path("out.mp4"))
+
+    pipeline.render_to_video(
+        dataclasses.replace(fast_config, chart_video=True), Path("t.gpx")
+    )
+
+    map_dir, chart_dir = dirs
+    assert map_dir.name != chart_dir.name
+    assert chart_dir.parent == map_dir.parent
+    assert list(map_dir.glob(gif_encoder_module.FRAME_GLOB)) == []

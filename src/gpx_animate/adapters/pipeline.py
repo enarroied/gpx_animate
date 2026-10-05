@@ -136,14 +136,23 @@ def render_to_video(
     renderer = MatplotlibRenderer(build_basemap(config), logos)
     encoder = FfmpegEncoder()
 
-    with tempfile.TemporaryDirectory() as frame_dir:
-        frames = render_animation(config, track, Path(frame_dir), renderer, logos)
+    with tempfile.TemporaryDirectory() as work_dir:
+        # Both frame sets live under one temporary directory, as two
+        # subdirectories rather than two sibling temporary directories. A chart
+        # render used to go to a fixed /tmp/chart_frames, which leaked every
+        # frame of every chart render and made two concurrent renders -- a CLI
+        # run and a GUI run, say -- write into the same directory. The encoder
+        # globs its own directory non-recursively, so a subdirectory cannot be
+        # mistaken for extra map frames.
+        frame_dir = Path(work_dir) / "frames"
+        frame_dir.mkdir()
+        frames = render_animation(config, track, frame_dir, renderer, logos)
 
         chart_frames = None
         if config.chart_video:
             chart_renderer = ProfileRenderer()
-            chart_dir = Path(frame_dir).parent / "chart_frames"
-            chart_dir.mkdir(parents=True, exist_ok=True)
+            chart_dir = Path(work_dir) / "chart"
+            chart_dir.mkdir()
             chart_frames = render_animation(
                 config, track, chart_dir, chart_renderer, logos
             )
