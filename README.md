@@ -19,7 +19,9 @@ pipeline runs from a single command.
 - **Output:** one `.mp4` file, ready to upload.
 - **Use case:** short "trip reveal" clips for travel videos and blog posts.
 - **Target user:** a solo creator who wants a repeatable, scriptable workflow —
-  not a one-off GUI session.
+  or who would rather click than remember flags. Both are first-class: there is
+  a CLI (`gpx-animate`) and a GUI (`gpx-animate-gui`), and neither replaces the
+  other.
 
 ---
 
@@ -69,6 +71,12 @@ pyproj
   run from the tag:
   `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate ...`.
   Bare `uvx gpx-animate` resolves against PyPI and would 404.
+- **The GUI is optional.** PyQt6 lives in the `gui` extra, so the CLI installs
+  and runs without Qt:
+
+  ```bash
+  uv sync --extra gui     # then `uv run gpx-animate-gui`
+  ```
 
 ---
 
@@ -93,6 +101,23 @@ uv run gpx-animate my_trip.gpx --size 1:1 --out square.mp4
 uv run gpx-animate my_trip.gpx --size 9:16 \
     --logo-start brand.png --logo-end brand.png
 ```
+
+### GUI
+
+```bash
+uv sync --extra gui
+uv run gpx-animate-gui
+```
+
+Nine tabs — Source, Map, Timing, Look, Logos, Output, GIF, Chart, Log — covering
+every setting the CLI has. The widgets are seeded from the same config files and
+`GPX_ANIMATE_*` environment variables the CLI reads, so a value set in
+`gpx-animate.toml` shows up pre-filled and behaves the same way. Renders run off
+the GUI thread; the Log tab shows the same lines the CLI prints.
+
+The GUI is not a wrapper around the CLI. Both front ends call the same function
+in `adapters/pipeline.py`, and a test asserts that by object identity — so a
+change to one cannot silently skip the other.
 
 ### CLI flags
 
@@ -267,8 +292,11 @@ one only overrides the layer below it:
 
 ```
 domain defaults  <  ~/.config/gpx-animate/config.toml  <  ./gpx-animate.toml
-                 <  GPX_ANIMATE_* environment  <  CLI flags
+                 <  GPX_ANIMATE_* environment  <  CLI flags / GUI widgets
 ```
+
+The GUI reads the same first four layers; the last layer is its widgets instead
+of command-line flags.
 
 Overrides are applied with `dataclasses.replace`, which re-runs validation, so
 a bad value is rejected before anything renders.
@@ -366,6 +394,9 @@ this tool's own, so nothing outside it should ever be there.
   `gpx_animate.domain.render_config`.
 - **New CLI flag:** add to `build_parser()`; the override is applied
   automatically, there is no whitelist to update.
+- **New render setting:** add the field to `RenderConfig`. The CLI picks it up
+  from the parser dests, the config layers pick it up from `dataclasses.fields`,
+  and a GUI test fails naming the field until a widget can set it.
 - **New config key:** add the field to `RenderConfig` or `Style`. Every layer
   is validated against the dataclass fields, so it becomes settable in both
   files and the environment with no further work.
@@ -428,10 +459,14 @@ this tool's own, so nothing outside it should ever be there.
 1. Douglas-Peucker simplification (`--simplify`).
 2. Speed-gradient coloring along the track.
 3. Intro/outro fade via ffmpeg filters.
-4. Batch mode: `for g in trips/*.gpx; do gpx-animate "$g"; done`.
+4. Batch mode: `for g in trips/*.gpx; do gpx-animate "$g"; done`. The GUI renders
+   one track at a time for now.
 5. Optional background music muxing.
 6. `--keep-frames` debug flag.
 7. Preset "brands" (e.g. `--brand hiking`, `--brand city`) as named configs.
+8. A real progress bar: frame counts are known up front, so the `FrameRenderer`
+   port could report progress instead of the GUI's indeterminate spinner.
+9. Map/GPX drag-and-drop onto the window.
 
 ---
 

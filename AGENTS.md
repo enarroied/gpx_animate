@@ -6,28 +6,35 @@ which diverges from the spec in ways that matter.
 
 ## Current state
 
-SPECS M0–M4 are done. The code is the hexagonal package the spec describes, it is
-installable, and it can be configured from files and the environment.
+SPECS M0–M8 are done. The code is the hexagonal package the spec describes, it is
+installable, it can be configured from files and the environment, and it has
+**two** front ends: a CLI and a PyQt GUI, both permanent.
 
 ```
 src/gpx_animate/
 ├── domain/         track.py (Point, Track, haversine), style.py, render_config.py, bbox.py (Bbox)
 ├── application/    ports.py (Protocols), errors.py, use_cases/{load_track,render_animation,export_video}.py
 ├── adapters/       basemaps/{tiles,none,tiff,factory}.py, renderers/matplotlib_renderer.py,
-│                   encoders/ffmpeg_encoder.py, logos/registry.py, cli/main.py, gui/main.py (stub)
+│                   encoders/ffmpeg_encoder.py, logos/registry.py, pipeline.py, cli/main.py, gui/main.py
 └── config/         defaults.py, layers.py (reading a layer), loader.py (stacking them)
 ```
 
-- `pyproject.toml` has a `[build-system]` (hatchling) and
-  `[project.scripts] gpx-animate`, so `uv sync` installs the project and
-  `uv run gpx-animate` / `uvx --from . gpx-animate` both work. `numpy`,
-  `requests`, `rasterio` and `pyyaml` are now declared dependencies rather than
-  arriving transitively.
+- `pyproject.toml` has a `[build-system]` (hatchling) and **two**
+  `[project.scripts]`: `gpx-animate` and `gpx-animate-gui`. `uv sync` installs the
+  project and `uv run gpx-animate` / `uvx --from . gpx-animate` both work.
+  `numpy`, `requests`, `rasterio` and `pyyaml` are declared dependencies rather
+  than arriving transitively.
+- **PyQt6 is in the `gui` extra, not in `dependencies`.** Qt is heavy and CLI-only
+  users should not pay for it. It *is* also in the `dev` group, because a
+  contributor running plain `uv sync` should be able to run the whole suite — a
+  statement about developers, not users. CI installs `uv sync --locked --extra
+  gui`; the lock is unaffected by an extra.
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 805 tests: 797 offline plus 8
-  `integration`-marked ones.
+  floor in `[tool.coverage.report] fail_under`. 880 tests: 872 offline plus 8
+  `integration`-marked ones, including a
+  headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
@@ -96,7 +103,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 797 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 872 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -118,13 +125,17 @@ there is no publish token to manage.
 | `0.0.0` | released as `v0.1.0`: M0–M7 + US-5/7/10/11 landed | ✅ tag `v0.1.0` (2026-10-04) |
 | `0.1.0` | first release: the above | ✅ tag `v0.1.0` (2026-10-04); `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.1.1` | chart-video frame leak (`--chart-video` muxed stale frames) | ✅ tag `v0.1.1` (2026-10-05) |
-| `0.2.0` | US-8 PyQt GUI, the second front end | `gpx-animate-gui` launches; headless `pytest-qt` smoke test; user has driven the window and called it stable |
+| `0.2.0` | US-8 PyQt GUI, the second front end | `gpx-animate-gui` launches; headless `pytest-qt` suite; both front ends share one `render_to_video`; the user has driven the window and called it stable |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
 
 There is no PyPI release, so the acceptance check for a tagged version is
 `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx`,
 not bare `uvx gpx-animate` — that form resolves against PyPI and would 404.
 `uvx --from . gpx-animate` works locally against a checkout.
+
+M0–M2 is invisible to users, so it stays in `[Unreleased]` rather than burning
+a version number on a refactor. M3 is the first user-visible milestone: the
+output path moved.
 
 The GUI is its own minor bump because it is a *new adapter* over a frozen
 application layer — new capability, no breaking change. M0–M2 is invisible to
@@ -284,19 +295,16 @@ work-in-progress edits. Same reason: any user-visible change updates
 - `config/loader.py` coerces by key through the `COERCERS` table; a key that is not in it
   is passed through as a string. That is why `fps = "29.97"` is an error rather than a
   silent truncation to 29.
-- Frames are written to a `tempfile.TemporaryDirectory()` owned by the **composition
-  root** (`adapters/pipeline.py`) and deleted after encoding; there is no
-  `--keep-frames`, so frame debugging means re-rendering. Use `tests/fakes.py` to
-  assert on frames instead.
-- **Never give a render pass a predictable shared path.** The chart used to write
-  to a fixed `/tmp/chart_frames`, outside the directory that was being cleaned up.
-  That was not just a leak: ffmpeg's image2 demuxer reads `frame_%05d.png` in
-  order and stops at the first *missing* file, so every frame left by an earlier,
-  longer render got muxed into the next chart video — a 3-frame chart came out as
-  22. The output was a plausible video rather than an error, so nothing surfaced
-  it. Both frame sets are now subdirectories of the one `TemporaryDirectory`; a
-  subdirectory is safe because the encoder globs non-recursively. A test asserts
-  the chart directory is inside the root that gets removed.
+- Frames are written to a `tempfile.TemporaryDirectory()` owned by
+  `adapters/pipeline.py` and deleted after encoding; there is no `--keep-frames`,
+  so frame debugging means re-rendering. Use `tests/fakes.py` to assert on frames
+  instead.
+- **Both** frame sets go under that one temporary directory, as `frames/` and
+  `chart/` subdirectories. Chart frames used to go to a fixed
+  `/tmp/chart_frames`, which leaked and — because ffmpeg's image2 demuxer reads
+  `frame_%05d.png` sequentially until a frame is *missing* — silently absorbed
+  stale frames from earlier renders, so a three-frame chart video could become a
+  twenty-two-frame one. Never give a render pass a predictable, shared path.
 - Logging replaced `print()`: library code uses `logging.getLogger(__name__)` and
   the CLI configures the root logger to stdout via `configure_logging`, so
   ffmpeg's stderr no longer interleaves with the app's output.
@@ -304,6 +312,48 @@ work-in-progress edits. Same reason: any user-visible change updates
   the use case does not wrap it, so behaviour is unchanged. Deliberate failures
   (`NoPointsError`, `FfmpegNotFoundError`) subclass both `GpxAnimateError` and a
   builtin, and the CLI turns those into a message plus exit code 1.
+
+- **`adapters/pipeline.py` is the composition root, and both front ends must go
+  through it.** `render_to_video` is the only thing that builds a
+  `MatplotlibRenderer`, an `FfmpegEncoder` and a temp directory. The GUI asserts
+  it holds the *same function object* the CLI does; a GUI that grew its own
+  rendering path would pass nearly every other test and quietly be a second
+  implementation. It lives in `adapters/`, not `application/`, because it names
+  those concrete classes by import.
+- The GUI must never shell out. `QProcess`/`subprocess` are rejected by a test
+  that parses the module's **AST**, not by a substring scan — the module's own
+  docstring explains why it avoids `QProcess`, so a scan matches the explanation.
+- **`config_from_widgets` applies every field, not just the changed ones.** The
+  widgets are seeded from `load_config(Path.cwd())`, so writing back an untouched
+  field writes back what it was seeded from. That is why there is no dirty
+  tracking. Two traps it exists to absorb: `dataclasses.replace` does **not**
+  coerce, so `tiff`/`out`/`output_dir` must be handed over as `Path` and not the
+  line edit's `str`; and a spinbox cannot hold `None`, so `logo_size_px == 0` is
+  the sentinel for "registry default". A test round-trips all 23 fields.
+- Progress is an **indeterminate** spinner, deliberately. Frame counts are known
+  up front, so the `FrameRenderer` port *could* report progress, but widening a
+  port for one front end's benefit is the wrong trade. It is on the roadmap.
+- The GUI's log pane is a `logging.Handler` that emits a Qt signal, because the
+  library logs and a GUI has no stdout. **The handler holds the bridge object and
+  checks `sip.isdeleted` before emitting** — it lives on the *root* logger, which
+  outlives any window, while the bridge is owned by one that can be closed at any
+  moment. Holding a bound signal instead means holding a C++ object Python may
+  collect, and the next log line then dereferences freed memory. That segfaulted
+  the suite once. `closeEvent` also removes the handler, or every window ever
+  opened leaks one.
+- `MainWindow()` with no argument reads the *real* environment and
+  `~/.config`, exactly like `main()`. Tests pass an explicit `base=` or the
+  shared `hermetic_config` fixture from `tests/conftest.py`; both front ends
+  inherit that failure mode.
+- Qt needs `QT_QPA_PLATFORM=offscreen`, set by `tests/conftest.py` with
+  `setdefault` so a developer can still run against a real display. A child
+  widget's `isVisible()` is false until its ancestors are shown, so a window that
+  is never shown must assert on `isHidden()` instead.
+- Fixture parameters requested for their side effects look like unused arguments
+  to `vulture`, which fails the build — `noqa` does not silence vulture. Ask for
+  them with `@pytest.mark.usefixtures` or `request.getfixturevalue`.
+- `pytest-qt`'s `qtbot.waitUntil` returns `None` on success and raises on
+  timeout. Asserting on its return value fails even when the wait worked.
 
 ## Gotchas in the tooling
 
@@ -338,11 +388,11 @@ work-in-progress edits. Same reason: any user-visible change updates
   `load_track` flattens **all** tracks and segments into one polyline.
 - README §1 advertises waypoint input; `load_track` reads tracks, then falls back
   to routes, and never touches `gpx.waypoints`.
-- SPECS US-8 PyQt GUI: **not** implemented. Don't write code or docs as if it
-  exists. US-5 (logo registry), US-6 (basemap abstraction), US-7 (boundary
-  control), US-10 (GIF export) and US-11 (elevation chart) are all implemented —
-  `--logo-start|end|marker` plus `--logo-registry`, `--tiff` / `--style none`,
-  `--bounds`, `--gif`, and `--profile` / `--chart-video`.
+- US-5 (logo registry), US-6 (basemap abstraction), US-7 (boundary control),
+  US-8 (PyQt GUI), US-10 (GIF export) and US-11 (elevation chart) are all
+  implemented — `--logo-start|end|marker` plus `--logo-registry`,
+  `--tiff` / `--style none`, `--bounds`, `gpx-animate-gui`, `--gif`, and
+  `--profile` / `--chart-video`. SPECS US-9 (agent-readiness) is this file.
 
 ## Conventions (SPECS §6 — binding)
 

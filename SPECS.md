@@ -9,15 +9,19 @@
 
 ## 0. One-line pitch
 
-Turn a GPX file into a short, animated, brandable MP4 with a CLI tool (and eventually a GUI-driven
-visual builder) — with a clean, testable, hexagonal Python codebase.
+Turn a GPX file into a short, animated, brandable MP4 with either a CLI tool or a
+GUI, both driving the same engine — with a clean, testable, hexagonal Python
+codebase.
 
 ---
 
 ## 1. Product goals
 
-1. **CLI-first**: `gpx-animate trip.gpx` produces a shareable MP4 in seconds.
-2. **GUI-later**: The same core must power a PyQt app with no logic duplication.
+1. **Two front ends, one engine**: `gpx-animate trip.gpx` for scripts and
+   terminals, `gpx-animate-gui` for people who would rather click. Both are
+   permanent and neither wraps the other; both call the same composition root.
+2. **No logic duplication**: a feature added to the CLI is reachable from the
+   GUI by construction, and a test enforces it (US-8).
 3. **Visual variety**: basemaps (tiles, no-map, local GeoTIFF, hillshade, 3D).
 4. **Brandable**: logos at start/end/moving; fonts, colors, title all parameterized.
 5. **Reproducible**: deterministic renders, timestamped outputs, no overwrites.
@@ -100,7 +104,8 @@ src/gpx_animate/
 │   │   └── registry.py     # reads logos/registry.yaml
 │   ├── cli/
 │   │   └── main.py         # argparse
-│   └── gui/                # PyQt (v2, stub first)
+│   ├── pipeline.py         # the composition root both front ends call
+│   └── gui/                # PyQt
 │       └── main.py
 └── config/
     ├── defaults.py         # default_config() -> RenderConfig
@@ -109,8 +114,7 @@ src/gpx_animate/
 ```
 
 Not yet built, listed here so the target layout is unambiguous: a DEM-based
-`basemaps/hillshade.py` (M9, separate spec) and the real PyQt window behind
-`adapters/gui/main.py` (M8).
+`basemaps/hillshade.py` (M9, separate spec).
 ```
 
 ---
@@ -363,17 +367,32 @@ percentage margin **so that** I can either frame tightly or show context.
 - Both are part of `RenderConfig`.
 - Tests: bounds parsing, margin math, invalid bounds rejected.
 
-### US-8 — PyQt GUI (v2)
+### US-8 — PyQt GUI
 **As a** user, **I want** a small GUI to pick a GPX, style, colors, logos, and
 hit "Render" **so that** I don't have to remember CLI flags.
 
+The GUI is a **peer** of the CLI, not a phase that replaces it. `gpx-animate`
+stays first-class for scripts and terminals, and nothing is deprecated. The
+point of the hexagonal split is that this is *possible* without duplicating
+logic, and the acceptance criteria below are what stop it decaying into a
+wrapper.
+
 **Acceptance criteria:**
-- `uv run gpx-animate-gui` launches.
+- `gpx-animate-gui` launches (an optional extra installs PyQt6; the CLI stays
+  Qt-free and installable without it).
 - Widgets: file picker, style dropdown, duration/hold spinboxes, size dropdown,
-  color pickers, logo pickers, output dir, Render button, log pane.
-- Uses the **same** `application/` use cases as the CLI. No duplicated logic.
-- Tests: at minimum, headless smoke test with `pytest-qt` that constructs the
-  window with a fake renderer and asserts it calls the use case with the right args.
+  color pickers, logo pickers, output dir, Render button, log pane, GIF and
+  elevation-chart settings.
+- **Every** `RenderConfig` field is settable from a widget. Enforced per field
+  by a test, not by review, because a flag added without a spinbox is otherwise
+  invisible.
+- Calls the **same** composition root as the CLI, asserted by function-object
+  identity; never a subprocess.
+- Reads the same config layers (defaults, user TOML, project TOML, environment),
+  seeding the widgets from them.
+- Renders off the GUI thread and reports failures in the log pane rather than a
+  traceback.
+- Tests: headless `pytest-qt` coverage, offscreen, no display required.
 
 ### US-9 — Agent-readiness
 **As an** AI agent, **I want** the repo to be self-describing **so that** I can
@@ -614,7 +633,8 @@ Options:
 6. **M5 — Logo system** (US-5). ✅
 7. **M6 — Boundary control** (US-7). ✅
 8. **M7 — SPECS.md + AGENTS.md polish** (US-9). ✅
-9. **M8 — PyQt GUI** (US-8). Not started: `adapters/gui/main.py` is a stub.
+9. **M8 — PyQt GUI** (US-8). ✅ Shipped as a second, equal front end; the CLI is
+   unchanged and not deprecated.
 10. **M9 — Hillshade / 3D TIFF** (future, separate spec).
 11. **M10 — GIF export** (US-10). Independent of the other milestones; landed any
     time after M2, since it only needs the `Encoder` port. Shipped after M4 so the

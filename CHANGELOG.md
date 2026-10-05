@@ -17,7 +17,27 @@ See AGENTS.md -> Versioning & releases.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A PyQt GUI, as a second front end.** `gpx-animate-gui` opens a nine-tab
+  window — Source, Map, Timing, Look, Logos, Output, GIF, Chart, Log — covering
+  every setting the CLI has. Renders run off the GUI thread with a spinner and a
+  log pane showing the same lines the CLI prints.
+
+  The CLI is unchanged and not deprecated: the two are permanent peers, not
+  phases. Both call the same function in `adapters/pipeline.py`, and a test
+  asserts that by object identity.
+
+### Fixed
+
+- The GUI's log handler could dereference freed memory after its window closed.
+  It holds the bridge object and checks it is still alive, and it is removed from
+  the root logger when the window closes.
+
+### Notes
+
+- PyQt6 is an **optional extra**, not a dependency: `uv sync --extra gui`. The
+  CLI installs and runs without Qt.
 
 ## [0.1.1] - 2026-10-05
 
