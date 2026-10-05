@@ -61,7 +61,10 @@ pyproj
 ```
 
 ### System
-- `ffmpeg` available on `PATH` (used for MP4 encoding).
+- `ffmpeg` for MP4 encoding. Normally found on `PATH`. A copy placed beside the
+  program — next to the executable, or next to the launch script — takes
+  priority, so a portable folder can carry its own and not depend on whatever the
+  machine has installed.
 
 ### Environment
 - Designed to run under **`uv`**.
@@ -113,7 +116,9 @@ Nine tabs — Source, Map, Timing, Look, Logos, Output, GIF, Chart, Log — cove
 every setting the CLI has. The widgets are seeded from the same config files and
 `GPX_ANIMATE_*` environment variables the CLI reads, so a value set in
 `gpx-animate.toml` shows up pre-filled and behaves the same way. Renders run off
-the GUI thread; the Log tab shows the same lines the CLI prints.
+the GUI thread; the Log tab shows the same lines the CLI prints. When a render
+finishes, an **Open output folder** button appears so you do not have to read a
+path out of the log.
 
 The GUI is not a wrapper around the CLI. Both front ends call the same function
 in `adapters/pipeline.py`, and a test asserts that by object identity — so a

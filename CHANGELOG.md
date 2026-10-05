@@ -28,7 +28,27 @@ See AGENTS.md -> Versioning & releases.
   phases. Both call the same function in `adapters/pipeline.py`, and a test
   asserts that by object identity.
 
+- **An "Open output folder" button**, disabled until a render finishes and then
+  pointing at the folder holding the video. The Log tab always carried the path,
+  but reading one out of a log pane is not something everyone does, and a video
+  that lands silently reads as a program that did nothing.
+
 ### Fixed
+
+- **A frozen build wrote its output where the user never looked.** Output defaults
+  to a relative `output/`, resolved against the working directory. A program
+  double-clicked on Windows starts in a working directory Explorer chose — often
+  `C:\Windows\System32` — so the finished video landed somewhere the user had never
+  looked and read as lost. A relative output directory is now resolved against the
+  program's own directory when frozen. This is a **no-op for the CLI**: relative
+  output is its long-standing contract, so paths it prints and returns do not move.
+  An explicit `--out` is left alone — the user typed it.
+
+- **ffmpeg is now looked for beside the program as well as on `PATH`.** A copy
+  placed next to the executable, or next to a launch script, takes priority — so a
+  portable folder can carry the ffmpeg it was tested against instead of whatever
+  the machine has. `PATH` is still consulted, and the error now names both places
+  it looked rather than telling you to install something you may already have.
 
 - The GUI's log handler could dereference freed memory after its window closed.
   It holds the bridge object and checks it is still alive, and it is removed from

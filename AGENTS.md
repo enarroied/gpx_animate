@@ -32,7 +32,7 @@ src/gpx_animate/
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 880 tests: 872 offline plus 8
+  floor in `[tool.coverage.report] fail_under`. 908 tests: 900 offline plus 8
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
@@ -103,7 +103,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 872 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 900 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -295,6 +295,28 @@ work-in-progress edits. Same reason: any user-visible change updates
 - `config/loader.py` coerces by key through the `COERCERS` table; a key that is not in it
   is passed through as a string. That is why `fps = "29.97"` is an error rather than a
   silent truncation to 29.
+- **"Where is the program" and "where does output go" have different answers, and
+  `adapters/paths.py` keeps them in two functions on purpose.** `application_dir()`
+  is the executable's directory under `sys.frozen` and the *script's* directory
+  otherwise — that is where a shipped `ffmpeg` is looked for. `output_dir_base()` is
+  the executable's directory under `sys.frozen` and the **working directory**
+  otherwise, because a relative `output/` is the CLI's long-standing contract.
+  Collapsing them into one helper gets one case wrong: use the program's directory
+  for output and every `uv run gpx-animate` render moves to `.venv/bin/output`,
+  which the behaviour baseline catches immediately.
+- **`resolve_output_dir` is a no-op unless frozen, deliberately.** Absolutising a
+  relative output dir everywhere would move the path the CLI prints and returns for
+  every existing script and CI job, to fix a problem only a double-clicked frozen
+  build has. A double-clicked exe on Windows starts with a cwd the user never chose
+  — frequently `C:\Windows\System32` — so `output/` would land where they have never
+  looked and the finished video reads as lost. Verified by simulating a frozen
+  build with a hostile cwd: the video went beside the exe, and the cwd stayed empty.
+- **A bundled `ffmpeg` beats `PATH` on purpose.** `find_ffmpeg()` checks beside the
+  program first so a portable folder encodes with the ffmpeg it shipped rather than
+  whatever the machine has; a version mismatch otherwise shows up as a confusing
+  encoder failure rather than a missing-binary error. Both `ffmpeg` and `ffmpeg.exe`
+  are tried, and the test uses `is_file()` rather than `exists()` so a stray
+  *directory* named `ffmpeg` cannot become `argv[0]`.
 - Frames are written to a `tempfile.TemporaryDirectory()` owned by
   `adapters/pipeline.py` and deleted after encoding; there is no `--keep-frames`,
   so frame debugging means re-rendering. Use `tests/fakes.py` to assert on frames

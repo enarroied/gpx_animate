@@ -9,6 +9,7 @@ end-to-end wiring is already covered through ``cli.main`` in
 from __future__ import annotations
 
 import dataclasses
+import sys
 from pathlib import Path
 
 import pytest
@@ -133,6 +134,30 @@ class TestRenderToVideo:
             style="none", duration=0.4, hold=0.2, fps=5, size="1:1", dpi=20, out=out
         )
         assert pipeline.render_to_video(config, short_track_gpx) == out
+
+    def test_a_frozen_build_writes_beside_the_program(
+        self, stub_render, short_track_gpx, tmp_path, monkeypatch
+    ):
+        """A double-clicked exe starts in a directory the user never chose.
+
+        Without this, `output/` resolves somewhere they have never looked and
+        the video reads as lost. It is the reason pipeline.py rebases the
+        directory rather than trusting the working directory.
+        """
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "app" / "gpx.exe"))
+        monkeypatch.setattr(sys, "argv", ["gpx.exe"])
+        monkeypatch.chdir(elsewhere)
+
+        config = RenderConfig(
+            style="none", duration=0.4, hold=0.2, fps=5, size="1:1", dpi=20
+        )
+        out = pipeline.render_to_video(config, short_track_gpx)
+
+        assert out.parent == (tmp_path / "app" / "output").resolve()
+        assert out.exists()
 
     def test_the_frame_directory_does_not_survive_the_run(
         self, stub_render, short_track_gpx, tmp_path

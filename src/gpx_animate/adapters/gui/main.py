@@ -44,9 +44,11 @@ from typing import Any
 from PyQt6 import sip
 from PyQt6.QtCore import QObject
 from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QUrl
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QCheckBox
 from PyQt6.QtWidgets import QColorDialog
@@ -258,6 +260,9 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self._base = load_config(Path.cwd()) if base is None else base
         self._worker: RenderWorker | None = None
+        # Set by _report_success; None means no render has finished, which is
+        # also why the Open output folder button starts disabled.
+        self._output_path: str | None = None
 
         self.setWindowTitle("gpx-animate")
         self.resize(720, 560)
@@ -592,6 +597,13 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel("Choose a GPX file, then press Render.")
 
+        self.open_output_button = QPushButton("Open output folder")
+        self.open_output_button.setEnabled(False)
+        self.open_output_button.setToolTip(
+            "Disabled until a render finishes. Opens the folder holding the video."
+        )
+        self.open_output_button.clicked.connect(self._open_output_folder)
+
         body = QVBoxLayout()
         body.addWidget(self.log_view)
         controls = QHBoxLayout()
@@ -599,6 +611,7 @@ class MainWindow(QMainWindow):
         controls.addWidget(self.level_combo)
         controls.addStretch()
         controls.addWidget(self.progress)
+        controls.addWidget(self.open_output_button)
         controls.addWidget(self.render_button)
         body.addLayout(controls)
         body.addWidget(self.status_label)
@@ -770,13 +783,36 @@ class MainWindow(QMainWindow):
         self.log_view.appendPlainText(message)
 
     def _report_success(self, out_path: str) -> None:
-        """Tell the user where the video landed.
+        """Tell the user where the video landed, and how to get there.
 
         The log pane already carries the pipeline's own ``Done:`` line, so this
         only sets the status text -- appending here too would show every path
         twice.
+
+        The button is enabled here rather than always available: clicking it
+        before a render has ever finished would open whichever directory happens
+        to be configured, which for a first run does not exist yet and looks
+        like a broken button rather than an unhelpful one.
         """
         self.status_label.setText(f"Wrote {out_path}")
+        self._output_path = out_path
+        self.open_output_button.setEnabled(True)
+
+    def _open_output_folder(self) -> None:
+        """Show the finished video in the platform's file browser.
+
+        Uses Qt's own handler rather than launching Explorer or a shell, so it
+        follows whatever the desktop has registered -- and, unlike a shell, it
+        cannot be turned into a way to run something else by editing a
+        configured path.
+        """
+        if not self._output_path:
+            return
+        directory = Path(self._output_path).parent
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory))):
+            self._append_log(
+                f"ERROR: could not open {directory}; the video is there regardless."
+            )
 
     def _report_failure(self, message: str) -> None:
         """Show a failure without taking the window down with it."""

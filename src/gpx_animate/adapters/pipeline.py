@@ -34,6 +34,7 @@ from gpx_animate.adapters.encoders.gif_encoder import PillowGifEncoder
 from gpx_animate.adapters.encoders.gif_encoder import require_pillow
 from gpx_animate.adapters.logos.registry import LogoRegistry
 from gpx_animate.adapters.logos.registry import PngLogoLoader
+from gpx_animate.adapters.paths import resolve_output_dir
 from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
 from gpx_animate.adapters.renderers.profile_renderer import ProfileRenderer
 from gpx_animate.application.errors import GifEncodeError
@@ -117,7 +118,12 @@ def render_to_video(
     """
     # Resolve the destination before rendering, so an unwritable path costs
     # nothing instead of a full render's worth of tiles and frames.
-    config = dataclasses.replace(config, out=resolve_output_path(config, gpx))
+    # A relative output_dir is rebased first, which is a no-op unless the
+    # program is frozen -- see adapters.paths for why the two cases differ.
+    located = dataclasses.replace(
+        config, output_dir=resolve_output_dir(config.output_dir)
+    )
+    config = dataclasses.replace(config, out=resolve_output_path(located, gpx))
 
     track = load_track(gpx)
     logger.info(

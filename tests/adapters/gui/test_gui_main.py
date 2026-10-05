@@ -957,3 +957,83 @@ def test_the_appearance_dataclass_is_untouched_by_the_gui():
 def test_gui_package_exposes_main():
     """``gpx_animate.adapters.gui`` is a package, not a bare module."""
     assert hasattr(gui_package, "main")
+
+
+# --- finding the finished video ---------------------------------------------
+#
+# A non-technical user is not reading the log pane for a path. These tests pin
+# the affordance that turns "a plausible-looking window that worked" into "a
+# file I can see", which is the difference between a program and a puzzle.
+
+
+class TestOpenOutputFolder:
+    def test_the_button_starts_disabled(self, window):
+        """Before any render there is no output to open.
+
+        Enabled-but-useless would open a directory that does not exist yet,
+        which reads as a broken button rather than an unhelpful one.
+        """
+        assert window.open_output_button.isEnabled() is False
+
+    def test_a_finished_render_enables_it(self, window, tmp_path):
+        window._report_success(str(tmp_path / "output" / "trip.mp4"))
+        assert window.open_output_button.isEnabled() is True
+
+    def test_it_opens_the_folder_holding_the_video(self, window, tmp_path, monkeypatch):
+        """The folder, not the file: Explorer opening the mp4 is not helpful."""
+        opened = []
+        monkeypatch.setattr(
+            gui_main.QDesktopServices, "openUrl", lambda url: opened.append(url) or True
+        )
+        out = tmp_path / "output" / "trip.mp4"
+        window._report_success(str(out))
+
+        window.open_output_button.click()
+
+        assert len(opened) == 1
+        assert opened[0].toLocalFile() == str(out.parent)
+
+    def test_clicking_it_before_a_render_does_nothing(self, window, monkeypatch):
+        opened = []
+        monkeypatch.setattr(
+            gui_main.QDesktopServices, "openUrl", lambda url: opened.append(url) or True
+        )
+        window._open_output_folder()
+        assert opened == []
+
+    def test_it_uses_qt_rather_than_a_shell(self, window, tmp_path, monkeypatch):
+        """QDesktopServices follows whatever the desktop registered, and a
+        configured path cannot turn it into a way to run something else."""
+        calls = []
+        monkeypatch.setattr(
+            gui_main.QDesktopServices, "openUrl", lambda url: calls.append(url) or True
+        )
+        window._report_success(str(tmp_path / "o" / "v.mp4"))
+        window._open_output_folder()
+        assert len(calls) == 1
+
+    def test_a_refused_open_is_reported_but_not_fatal(
+        self, window, tmp_path, monkeypatch
+    ):
+        """No desktop handler registered must not crash a finished render, and
+        must not read as "the video is gone"."""
+        monkeypatch.setattr(gui_main.QDesktopServices, "openUrl", lambda url: False)
+        window._report_success(str(tmp_path / "o" / "v.mp4"))
+
+        window._open_output_folder()
+
+        assert "could not open" in window.log_view.toPlainText()
+
+    def test_a_second_render_repoints_the_button(self, window, tmp_path, monkeypatch):
+        """Otherwise it would open the first run's folder, which by then holds
+        an older video and no sign of the one just finished."""
+        opened = []
+        monkeypatch.setattr(
+            gui_main.QDesktopServices, "openUrl", lambda url: opened.append(url) or True
+        )
+        window._report_success(str(tmp_path / "first" / "a.mp4"))
+        window._report_success(str(tmp_path / "second" / "b.mp4"))
+
+        window._open_output_folder()
+
+        assert opened[0].toLocalFile() == str(tmp_path / "second")

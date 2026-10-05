@@ -10,6 +10,7 @@ from gpx_animate.adapters.encoders.ffmpeg_encoder import FRAME_GLOB
 from gpx_animate.adapters.encoders.ffmpeg_encoder import YUV420P
 from gpx_animate.adapters.encoders.ffmpeg_encoder import FfmpegEncoder
 from gpx_animate.adapters.encoders.ffmpeg_encoder import build_command
+from gpx_animate.adapters.encoders.ffmpeg_encoder import find_ffmpeg
 from gpx_animate.application.errors import FfmpegNotFoundError
 
 
@@ -97,8 +98,19 @@ class TestEncoding:
 class TestMissingFfmpeg:
     def test_raises_a_dedicated_error(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ffmpeg_encoder.shutil, "which", lambda name: None)
-        with pytest.raises(FfmpegNotFoundError, match="ffmpeg not found on PATH"):
+        with pytest.raises(FfmpegNotFoundError, match="ffmpeg not found"):
             FfmpegEncoder().encode(tmp_path, 30, tmp_path / "v.mp4")
+
+    def test_the_error_names_both_places_it_looked(self, monkeypatch, tmp_path):
+        """A user who shipped the binary needs to be told it was not found
+        *there*; telling them only about PATH sends them to install something
+        they already have."""
+        monkeypatch.setattr(ffmpeg_encoder.shutil, "which", lambda name: None)
+        with pytest.raises(FfmpegNotFoundError) as caught:
+            FfmpegEncoder().encode(tmp_path, 30, tmp_path / "v.mp4")
+        message = str(caught.value)
+        assert "next to this program" in message
+        assert "PATH" in message
 
     def test_does_not_launch_anything(self, monkeypatch, tmp_path):
         def explode(*args, **kwargs):
@@ -114,3 +126,64 @@ class TestMissingFfmpeg:
         monkeypatch.setattr(ffmpeg_encoder.shutil, "which", lambda name: None)
         with pytest.raises(RuntimeError):
             FfmpegEncoder().encode(tmp_path, 30, tmp_path / "v.mp4")
+
+
+class TestFindFfmpeg:
+    """A portable install ships its own ffmpeg; PATH is the fallback."""
+
+    @pytest.fixture
+    def beside(self, monkeypatch, tmp_path):
+        """Point the search at an empty directory next to 'the program'."""
+        monkeypatch.setattr(ffmpeg_encoder, "application_dir", lambda: tmp_path)
+        monkeypatch.setattr(ffmpeg_encoder.shutil, "which", lambda name: "/usr/bin/x")
+        return tmp_path
+
+    def test_a_copy_beside_the_program_wins(self, beside):
+        bundled = beside / "ffmpeg"
+        bundled.write_text("#!/bin/sh\n")
+        assert find_ffmpeg() == str(bundled)
+
+    def test_it_beats_whichever_ffmpeg_is_on_path(self, beside):
+        """Deliberate: a portable install encodes with the ffmpeg it shipped."""
+        (beside / "ffmpeg").write_text("#!/bin/sh\n")
+        assert find_ffmpeg() != "/usr/bin/x"
+
+    def test_path_is_used_when_nothing_is_beside_it(self, beside):
+        assert find_ffmpeg() == "/usr/bin/x"
+
+    def test_the_windows_extension_is_tried_first(self, beside):
+        """ffmpeg.exe cannot be run as `ffmpeg` on Windows."""
+        (beside / "ffmpeg.exe").write_text("")
+        (beside / "ffmpeg").write_text("")
+        assert find_ffmpeg() == str(beside / "ffmpeg.exe")
+
+    def test_the_bare_name_still_works(self, beside):
+        (beside / "ffmpeg").write_text("")
+        assert find_ffmpeg() == str(beside / "ffmpeg")
+
+    def test_a_directory_named_ffmpeg_is_not_mistaken_for_the_binary(self, beside):
+        """is_file(), not exists(): a stray directory must not become argv[0]."""
+        (beside / "ffmpeg").mkdir()
+        assert find_ffmpeg() == "/usr/bin/x"
+
+    def test_none_when_there_is_no_ffmpeg_at_all(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(ffmpeg_encoder, "application_dir", lambda: tmp_path)
+        monkeypatch.setattr(ffmpeg_encoder.shutil, "which", lambda name: None)
+        assert find_ffmpeg() is None
+
+
+class TestExecutableIsInvoked:
+    def test_the_resolved_path_is_what_runs(self, monkeypatch, tmp_path, recorded_call):
+        bundled = tmp_path / "ffmpeg"
+        bundled.write_text("#!/bin/sh\n")
+        monkeypatch.setattr(ffmpeg_encoder, "application_dir", lambda: tmp_path)
+        FfmpegEncoder().encode(tmp_path, 30, tmp_path / "v.mp4")
+        assert recorded_call[0][0][0] == str(bundled)
+
+    def test_build_command_defaults_to_the_bare_name(self, tmp_path):
+        """Kept so the pinned command line is unchanged for PATH installs."""
+        assert build_command(tmp_path, 30, tmp_path / "v.mp4")[0] == "ffmpeg"
+
+    def test_build_command_accepts_an_explicit_executable(self, tmp_path):
+        cmd = build_command(tmp_path, 30, tmp_path / "v.mp4", executable="/opt/ffmpeg")
+        assert cmd[0] == "/opt/ffmpeg"
