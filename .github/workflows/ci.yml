@@ -20,7 +20,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --locked
+        # --extra gui because the GUI tests need PyQt6, which is deliberately not
+        # a base dependency. The lock file is unchanged by an extra, so
+        # --locked still holds.
+        run: uv sync --locked --extra gui
 
       - name: Ruff lint
         run: uv run ruff check .

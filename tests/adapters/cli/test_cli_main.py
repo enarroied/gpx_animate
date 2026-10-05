@@ -1,7 +1,6 @@
 """The CLI adapter: argument wiring, precedence, and exit codes."""
 
 import logging
-import os
 from pathlib import Path
 
 import gpxpy.gpx
@@ -18,7 +17,6 @@ from gpx_animate.application.ports import RenderResult
 from gpx_animate.application.use_cases.render_animation import (
     render_animation as real_render_animation,
 )
-from gpx_animate.config import layers
 from gpx_animate.config.defaults import SIZES
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.bbox import Bbox
@@ -67,22 +65,12 @@ class Recorder:
         return out
 
 
-@pytest.fixture(autouse=True)
-def hermetic_config(monkeypatch, tmp_path):
-    """Keep the developer's own configuration out of these tests.
-
-    ``main`` reads the real environment and the real ``~/.config``, so without
-    this a stray ``GPX_ANIMATE_DURATION`` or a hand-written user TOML would
-    change what the suite asserts. Every test also runs in a directory with no
-    ``gpx-animate.toml`` in it, unless it writes one.
-    """
-    for name in list(os.environ):
-        if name.startswith("GPX_ANIMATE_"):
-            monkeypatch.delenv(name)
-    monkeypatch.setattr(
-        layers, "user_config_path", lambda: tmp_path / "no-such-user-config.toml"
-    )
-    monkeypatch.chdir(tmp_path)
+# Every CLI test goes through ``main``, and ``main`` reads the real environment
+# and the real ``~/.config``, so every CLI test is hermetic. The implementation
+# is shared with the GUI tests in ``tests/conftest.py``; this module asks for it
+# with a marker rather than an autouse fixture that would only forward the
+# request, because that forwarding argument is a fixture use vulture cannot see.
+pytestmark = pytest.mark.usefixtures("hermetic_config")
 
 
 @pytest.fixture

@@ -21,8 +21,21 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[project.optional-dependencies]
+# The GUI is an optional extra, not a base dependency. PyQt6 pulls Qt into every
+# environment that installs it, so making it required would tax CLI-only users
+# for a front end they never run. `uv sync --extra gui` when you want it.
+#
+# It is also in the dev group below, because a contributor running plain
+# `uv sync` should be able to run the whole suite. That is a statement about
+# developers, not users: `uvx gpx-animate` installs neither.
+gui = ["pyqt6>=6.7"]
+
 [project.scripts]
 gpx-animate = "gpx_animate.adapters.cli.main:main"
+# A second, equal entry point. The GUI does not replace the CLI and is not a
+# wrapper around it: both call gpx_animate.adapters.pipeline.render_to_video.
+gpx-animate-gui = "gpx_animate.adapters.gui.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gpx_animate"]
@@ -31,8 +44,10 @@ packages = ["src/gpx_animate"]
 dev = [
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.2",
+    "pyqt6>=6.7",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "pytest-qt>=4.4.0",
     "ruff>=0.16.9",
     "ty>=0.0.84",
     "vulture>=2.16",
@@ -57,6 +72,9 @@ ignore = ["E501", "PLR0913", "PLR0917", "PLR2004"]
 # coordinates) that N806 dislikes. The old monolith exemption is gone with the
 # monolith; this is its replacement.
 "src/gpx_animate/adapters/renderers/matplotlib_renderer.py" = ["N806"]
+# Qt overrides are camelCase by contract: QWidget.closeEvent, and any handler
+# added later. Renaming them to satisfy a linter would stop Qt calling them.
+"src/gpx_animate/adapters/gui/main.py" = ["N802"]
 
 [tool.ruff.lint.isort]
 force-single-line = true

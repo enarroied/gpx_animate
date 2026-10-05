@@ -1,5 +1,6 @@
 """Shared fixtures for the gpx_animate test suite."""
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -7,13 +8,43 @@ import pytest
 import rasterio
 from rasterio.transform import from_bounds
 
+from gpx_animate.config import layers
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.render_config import RenderConfig
 from gpx_animate.domain.track import Point
 from gpx_animate.domain.track import Track
 
 
+# Qt needs a platform plugin. There is no display in CI (or on a developer's
+# machine over ssh), and without this every GUI test aborts in QApplication
+# construction rather than failing on an assertion. setdefault, not assignment,
+# so a developer can still run the suite against a real display.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def hermetic_config(monkeypatch, tmp_path):
+    """Keep the developer's own configuration out of a test.
+
+    Both front ends read the real environment and the real ``~/.config``, so
+    without this a stray ``GPX_ANIMATE_DURATION`` or a hand-written user TOML
+    would change what the suite asserts. Every test also runs in a directory
+    with no ``gpx-animate.toml`` in it, unless it writes one.
+
+    Not autouse: most tests never touch config loading, and chdir-ing the whole
+    suite to ``tmp_path`` would be a large, invisible behaviour change. The CLI
+    module makes it autouse for itself, since every test there goes through
+    ``main``.
+    """
+    for name in list(os.environ):
+        if name.startswith("GPX_ANIMATE_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setattr(
+        layers, "user_config_path", lambda: tmp_path / "no-such-user-config.toml"
+    )
+    monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture(scope="session")
