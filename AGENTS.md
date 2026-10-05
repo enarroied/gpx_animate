@@ -25,9 +25,9 @@ src/gpx_animate/
   arriving transitively.
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
-  implementations) and `tests/fixtures/`. 100% statement **and**
-  branch coverage, with a 90% floor in `[tool.coverage.report] fail_under`.
-  788 tests: 780 offline plus 8 `integration`-marked ones.
+  implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
+  floor in `[tool.coverage.report] fail_under`. 805 tests: 797 offline plus 8
+  `integration`-marked ones.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
   `-m 'not integration'`) because they need ffmpeg plus the tile servers. Run
   them with `uv run pytest -m integration`; CI runs them non-blocking.
@@ -96,7 +96,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 780 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 797 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -116,8 +116,9 @@ there is no publish token to manage.
 | Version | Scope | Exit criteria |
 |---|---|---|
 | `0.0.0` | released as `v0.1.0`: M0–M7 + US-5/7/10/11 landed | ✅ tag `v0.1.0` (2026-10-04) |
-| `0.1.0` | first release: the above | `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
-| `0.2.0` | US-8 PyQt GUI | `gpx-animate-gui` launches; headless `pytest-qt` smoke test |
+| `0.1.0` | first release: the above | ✅ tag `v0.1.0` (2026-10-04); `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
+| `0.1.1` | chart-video frame leak (`--chart-video` muxed stale frames) | ✅ tag `v0.1.1` (2026-10-05) |
+| `0.2.0` | US-8 PyQt GUI, the second front end | `gpx-animate-gui` launches; headless `pytest-qt` smoke test; user has driven the window and called it stable |
 | `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
 
 There is no PyPI release, so the acceptance check for a tagged version is
@@ -283,9 +284,19 @@ work-in-progress edits. Same reason: any user-visible change updates
 - `config/loader.py` coerces by key through the `COERCERS` table; a key that is not in it
   is passed through as a string. That is why `fps = "29.97"` is an error rather than a
   silent truncation to 29.
-- Frames are written to a `tempfile.TemporaryDirectory()` owned by the **CLI
-  adapter** and deleted after encoding; there is no `--keep-frames`, so frame
-  debugging means re-rendering. Use `tests/fakes.py` to assert on frames instead.
+- Frames are written to a `tempfile.TemporaryDirectory()` owned by the **composition
+  root** (`adapters/pipeline.py`) and deleted after encoding; there is no
+  `--keep-frames`, so frame debugging means re-rendering. Use `tests/fakes.py` to
+  assert on frames instead.
+- **Never give a render pass a predictable shared path.** The chart used to write
+  to a fixed `/tmp/chart_frames`, outside the directory that was being cleaned up.
+  That was not just a leak: ffmpeg's image2 demuxer reads `frame_%05d.png` in
+  order and stops at the first *missing* file, so every frame left by an earlier,
+  longer render got muxed into the next chart video — a 3-frame chart came out as
+  22. The output was a plausible video rather than an error, so nothing surfaced
+  it. Both frame sets are now subdirectories of the one `TemporaryDirectory`; a
+  subdirectory is safe because the encoder globs non-recursively. A test asserts
+  the chart directory is inside the root that gets removed.
 - Logging replaced `print()`: library code uses `logging.getLogger(__name__)` and
   the CLI configures the root logger to stdout via `configure_logging`, so
   ffmpeg's stderr no longer interleaves with the app's output.

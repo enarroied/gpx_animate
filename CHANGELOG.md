@@ -19,6 +19,33 @@ See AGENTS.md -> Versioning & releases.
 
 Nothing yet.
 
+## [0.1.1] - 2026-10-05
+
+One bug fix and one internal move. No flag, config key or output byte changes.
+
+### Fixed
+
+- **Chart videos could silently contain frames from earlier renders.** Chart
+  frames were written to a fixed `/tmp/chart_frames` rather than inside the
+  temporary directory, so they were never cleaned up. Because ffmpeg's image2
+  demuxer reads `frame_%05d.png` sequentially until a frame is missing, leftovers
+  from a longer previous render were absorbed into the next chart video — a
+  three-frame chart could come out as twenty-two frames, most of them stale PNGs
+  from an earlier run.
+
+  Both frame sets now live as subdirectories of one `TemporaryDirectory`, so
+  cleanup is automatic and two concurrent renders cannot share a path. This
+  changes the bytes on disk for `--chart-video`: frame counts are now correct
+  rather than correct-plus-leftovers. Map renders are unaffected.
+
+### Notes
+
+- The composition root moved out of the CLI adapter into
+  `adapters/pipeline.py`, which is where a second front end will call it from.
+  A behaviour baseline recorded before the move matches afterwards, frame for
+  frame; the only difference across the sample renders is the chart frame count
+  the fix above corrects.
+
 ## [0.1.0] - 2026-10-04
 
 First release. There is no PyPI package — install from the GitHub tag:
@@ -98,4 +125,5 @@ whole feature set rather than a delta.
   (alpha channel) so the video background is transparent in outputs that support it.
 - Specified in `SPECS.md` but still not implemented: the PyQt GUI (US-8).
 
+[0.1.1]: https://github.com/enarroied/gpx_animate/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/enarroied/gpx_animate/releases/tag/v0.1.0

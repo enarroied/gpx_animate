@@ -65,7 +65,10 @@ pyproj
 - Designed to run under **`uv`**.
 - Should also work with plain `pip` / `venv`.
 - Installed as a package, so the entry point is `gpx-animate` (`uv sync`, then
-  `uv run gpx-animate ...`; a released version would be `uvx gpx-animate ...`).
+  `uv run gpx-animate ...`). There is no PyPI package, so a released version is
+  run from the tag:
+  `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate ...`.
+  Bare `uvx gpx-animate` resolves against PyPI and would 404.
 
 ---
 
