@@ -11,4 +11,7 @@ the adapters here would drag matplotlib into every ``import gpx_animate``,
 which is precisely what the layering exists to prevent.
 """
 
-__version__ = "0.0.0"
+from importlib.metadata import version as _distribution_version
+
+
+__version__ = _distribution_version("gpx-animate")
