@@ -126,6 +126,10 @@ The GUI is not a wrapper around the CLI. Both front ends call the same function
 in `adapters/pipeline.py`, and a test asserts that by object identity — so a
 change to one cannot silently skip the other.
 
+**No Python needed on Windows.** The Releases page carries a portable folder
+with `gpx-animate-gui.exe` and an `ffmpeg.exe` beside it — unzip, double-click,
+go.
+
 ### CLI flags
 
 | Flag | Type | Default | Notes |

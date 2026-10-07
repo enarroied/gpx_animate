@@ -28,6 +28,13 @@ See AGENTS.md -> Versioning & releases.
   phases. Both call the same function in `adapters/pipeline.py`, and a test
   asserts that by object identity.
 
+- **A frozen Windows build of the GUI.** The release page carries
+  `gpx-animate-gui-windows.zip`: a portable folder with `gpx-animate-gui.exe`
+  and an `ffmpeg.exe` side by side — unzip, double-click, go. No Python and no
+  PATH setup. PyInstaller cannot cross-compile, so the folder is built on a
+  Windows runner (manually, or automatically when a version tag is pushed) and
+  verified there by rendering offline with ffmpeg taken from beside the exe.
+
 - **An "Open output folder" button**, disabled until a render finishes and then
   pointing at the folder holding the video. The Log tab always carried the path,
   but reading one out of a log pane is not something everyone does, and a video
@@ -58,6 +65,9 @@ See AGENTS.md -> Versioning & releases.
 
 - PyQt6 is an **optional extra**, not a dependency: `uv sync --extra gui`. The
   CLI installs and runs without Qt.
+
+- `gpx_animate.__version__` is read from the distribution metadata instead of a
+  hardcoded string, so it can never drift from `pyproject.toml`; a test pins it.
 
 ## [0.1.1] - 2026-10-05
 

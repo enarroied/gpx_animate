@@ -29,10 +29,18 @@ src/gpx_animate/
   contributor running plain `uv sync` should be able to run the whole suite — a
   statement about developers, not users. CI installs `uv sync --locked --extra
   gui`; the lock is unaffected by an extra.
+- **The frozen Windows build lives in `packaging/gpx-animate.spec`.** PyInstaller
+  cannot cross-compile, so it is built on `windows-latest` by the `build-windows`
+  CI job (manual `workflow_dispatch` or a `v*` tag — never on push/PR), verified
+  there with an offline frozen render, and attached to the GitHub Release. The
+  shipped artifact is a portable folder: `gpx-animate-gui.exe` with `ffmpeg.exe`
+  beside it. The spec also builds a console `gpx-animate.exe`, but that one is a
+  render-verification vehicle and is **not** the release artifact. The Linux
+  equivalent is proofed by hand locally (same spec, same commands).
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 908 tests: 900 offline plus 8
+  floor in `[tool.coverage.report] fail_under`. 909 tests: 901 offline plus 8
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
