@@ -89,7 +89,9 @@ pyproj
 ```bash
 uv run gpx-animate my_trip.gpx
 ```
-Produces `my_trip.mp4` next to the GPX file.
+Produces `output/my_trip__<timestamp>.mp4` — a timestamped name in the
+`./output/` directory, so a render never overwrites an earlier one. `--out`
+picks a specific file instead (and `--force` overwrites it).
 
 ### Examples
 
@@ -141,6 +143,7 @@ change to one cannot silently skip the other.
 | `--logo-end` | str | `None` | Logo at the end point, same resolution |
 | `--logo-marker` | str | `None` | Logo that rides the moving head marker |
 | `--logo-size` | int | — | Override logo width in device pixels, for every placement |
+| `--logo-plate-padding` | float | `0.0` | Padding fraction for the white plate behind logos; `0.0` draws no plate |
 | `--logo-registry` | path | `./logos/registry.yaml` | YAML registry mapping names to logo files |
 | `--gif` | flag | off | Also write a GIF alongside the MP4, from the same frames |
 | `--gif-size` | str | `800x450` | GIF pixel size, `WIDTHxHEIGHT` |
@@ -156,7 +159,9 @@ change to one cannot silently skip the other.
 | `--bounds` | str | — | Fixed view `min_lon,min_lat,max_lon,max_lat` in degrees; overrides `--margin` |
 | `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
 
-Total clip length = `duration + hold` (default **6 s**: 5 s drawing + 1 s hold).
+Total clip length ≈ `duration + hold` (default **6 s**: 5 s drawing + 1 s
+hold; each phase truncates to a whole frame, so a fractional request can come
+out up to two frames short).
 
 ### Framing
 
@@ -319,6 +324,7 @@ a config file or the environment.
 | `hold` | float | `1.0` | Hold phase after the trace is finished, seconds |
 | `fps` | int | `30` | Frame rate for both phases |
 | `size` | str | `16:9` | `16:9`, `1:1` or `9:16` |
+| `dpi` | int | `150` | Render resolution in dots per inch; no CLI flag |
 | `margin` | float | `0.15` | Padding around the track bbox, as a fraction |
 | `bounds` | str | *(none)* | Fixed view `min_lon,min_lat,max_lon,max_lat`; wins over `margin` |
 | `out` | path | *(none)* | Output file; blank means "generate one" |
@@ -328,6 +334,7 @@ a config file or the environment.
 | `logo_end` | str | *(none)* | Logo at the end point, same resolution |
 | `logo_marker` | str | *(none)* | Logo that rides the moving head marker |
 | `logo_size_px` | int | *(none)* | Override logo width in device pixels, for every placement |
+| `logo_plate_padding` | float | `0.0` | Padding fraction for the white plate behind logos; `0.0` draws no plate |
 | `gif.enabled` | bool | `false` | Write a GIF alongside the MP4 |
 | `gif.size` | str | `800x450` | GIF pixel size, `WIDTHxHEIGHT` |
 | `gif.fps` | int | `15` | GIF frame rate; frames above it are sampled down |
@@ -477,21 +484,27 @@ this tool's own, so nothing outside it should ever be there.
 
 ## 9. Verification checklist
 
-For a reviewer (human or AI) checking this spec against the implementation:
+The original spec shipped this checklist as a blank slate for a reviewer to
+tick. Tracking has moved into a status table so a deviation is never a silent
+drift: each row records what the spec intended, what the code does and — where
+they differ — the reason. Where a claim is enforced by a test, the test is named.
 
-- [ ] `RenderConfig`/`Style` defaults contain all documented keys.
-- [ ] Every config key can be overridden by the corresponding CLI flag
-      listed in §4 (where a flag exists).
-- [ ] `STYLES` contains exactly: `positron`, `voyager`, `dark`, `osm`, `topo`, `satellite`.
-- [ ] `SIZES` contains exactly: `16:9`, `1:1`, `9:16`.
-- [ ] Clip length equals `duration + hold` (±1 frame).
-- [ ] Final frame is held for `hold` seconds.
-- [ ] Output is H.264, `yuv420p`, playable in a browser.
-- [ ] Output filename defaults to `<gpx_stem>.mp4` in the GPX directory.
-- [ ] Frames are written to a temp dir and cleaned up.
-- [ ] Missing `ffmpeg` produces a clear error, not a traceback.
-- [ ] Missing/invalid GPX produces a clear error.
-- [ ] No global state mutated between runs.
+| Status | Claim | On the code |
+|---|---|---|
+| PASS | Every `RenderConfig`/`Style` key has a default and a §5 row. | `default_config()` in `config/defaults.py`; §5 walks all 23 fields, including `dpi` and `logo_plate_padding`. |
+| PASS | Every config key is overridable by a CLI flag where a flag exists. | `config_from_args` derives overrides from the argparse dests, so a new flag is wired by construction. The converse is deliberate: `output_dir`, `dpi`, `logo_size_px` and every `appearance.*` key have no flag and are set in files/environment. |
+| DEVIATION | `STYLES` is exactly `positron`, `voyager`, `dark`, `osm`, `topo`, `satellite`. | There is no `STYLES` constant. `style_choices()` returns `osm`, `topo`, `satellite`, `none`; `positron`/`voyager`/`dark` appear only when `CARTO_API_KEY` is set (built at import in `adapters/basemaps/tiles.py`), and `none` renders no map. The spec assumed a fixed set; the provider list is runtime data. |
+| PASS | `SIZES` is exactly `16:9`, `1:1`, `9:16`. | `SIZE_PRESETS` in `domain/render_config.py`; any other size is rejected at construction. |
+| DEVIATION | Clip length equals `duration + hold` (±1 frame). | It is `int(duration*fps) + int(hold*fps)` frames: each phase truncates independently, so a fractional request can come out up to **two** frames short, not one. |
+| DEVIATION | Final frame is held for `hold` seconds. | The hold phase renders `int(hold*fps)/fps` ≥ `hold − 1/fps` frames, byte-identical to the last draw frame. For the GIF, delays are quantised to centiseconds and Pillow merges runs of identical frames (0.3 s draw + 1.0 s hold → a two-frame GIF whose second frame holds 1200 ms). |
+| PASS | Output is H.264 `yuv420p`, browser-playable. | `ffmpeg_encoder.py` encodes `libx264` with `-pix_fmt yuv420p`; tests pin the codec. |
+| DEVIATION | Output defaults to `<gpx_stem>.mp4` in the GPX directory. | Since M3 it is `output/<gpx_stem>__<YYYYMMDD-HHMMSS>.mp4`. Reason: a bare re-run must never silently overwrite an earlier render. `--out` names the file exactly; `--force` overwrites it. |
+| PASS | Frames go to a temp dir and are cleaned up. | `render_to_video` in `adapters/pipeline.py` owns the `TemporaryDirectory` (`frames/` and `chart/` subdirs are deleted after encoding); there is no `--keep-frames`. |
+| PASS | Missing `ffmpeg` is a clear error, not a traceback. | `find_ffmpeg` raises `FfmpegNotFoundError` naming both places it looked (beside the program, then `PATH`); the CLI turns it into a message and exit 1. |
+| DEVIATION | Missing or invalid GPX is a clear error. | A missing file is a clean exit 1 (`OSError` caught by the CLI). A malformed file raises gpxpy's `GPXXMLSyntaxException` with a traceback — deliberately not wrapped, so gpxpy's diagnostics survive intact. |
+| PASS | No global state mutated between runs. | No `CONFIG` dict, no runtime `default_headers` mutation; the only module-level mappings (`SIZE_PRESETS`, `LOGO_POSITIONS`, `PROFILE_POSITIONS`, `DEST_REMAP`) are never written to. A byte-identical baseline render pins cross-run stability. |
+| PASS | The GUI renders through the same code path as the CLI. | Both front ends import the same `render_to_video` from `adapters/pipeline.py`; `tests/adapters/gui/test_gui_main.py` asserts object identity (`gui_main.render_to_video is pipeline.render_to_video`, same for the CLI). |
+| PASS | The GUI never shells out. | The AST-level test `test_the_gui_never_shells_out_to_the_cli` rejects `QProcess`/`subprocess` in `adapters/gui/main.py`; rendering runs in-process on a worker thread. |
 
 ---
 
