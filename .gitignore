@@ -31,6 +31,9 @@ MANIFEST
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+#   ...but this one is versioned on purpose: the same file drives the Linux and
+#   the Windows CI builds, so a divergence between the two can never sneak in.
+!packaging/*.spec
 
 # Installer logs
 pip-log.txt
