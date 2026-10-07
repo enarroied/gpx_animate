@@ -50,7 +50,10 @@ jobs:
         with:
           files: ./coverage.xml
           # CodeCov rejects tokenless uploads, so the secret is needed even
-          # though this repo is public. fail_ci_if_error is deliberate: a
-          # silently-dropped upload leaves the badge stale with nothing to say so.
+          # though this repo is public. fail_ci_if_error is false on purpose:
+          # the upload has been flaky without anything test-related wrong, and
+          # an occasional missed upload must not turn the matrix red. The
+          # badge may therefore lag; the --cov run below still enforces the
+          # coverage floor locally.
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
+          fail_ci_if_error: false
