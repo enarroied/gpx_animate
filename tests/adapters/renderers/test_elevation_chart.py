@@ -260,16 +260,18 @@ class TestDrawChartOn:
         assert handle.axes.get_xlim() == pytest.approx((DISTS[0], DISTS[-1]))
 
     def test_the_axes_span_the_whole_data_range(self, parent):
+        # DISTS is monotonic, so [0]/-[1] are the range; the bare ndarray
+        # min()/max() overloads resolve differently between Python versions.
         handle = draw_chart_on(parent, DISTS, ELEVATIONS, DEFAULT_STYLE)
         low, high = handle.axes.get_xlim()
-        assert low == pytest.approx(DISTS.min())
-        assert high == pytest.approx(DISTS.max())
+        assert low == pytest.approx(DISTS[0])
+        assert high == pytest.approx(DISTS[-1])
 
     def test_the_elevation_axis_spans_the_whole_range(self, parent):
         handle = draw_chart_on(parent, DISTS, ELEVATIONS, DEFAULT_STYLE)
         low, high = handle.axes.get_ylim()
-        assert low == pytest.approx(ELEVATIONS.min())
-        assert high == pytest.approx(ELEVATIONS.max())
+        assert low == pytest.approx(min(ELEVATIONS.tolist()))
+        assert high == pytest.approx(max(ELEVATIONS.tolist()))
 
     def test_the_panel_has_a_backing_plate(self, parent):
         """Without one a hairline curve over tile texture is invisible."""
