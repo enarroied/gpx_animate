@@ -9,6 +9,9 @@ on:
 
 jobs:
   check:
+    # Dispatch runs exist to produce the Windows artifact; they must not also
+    # re-pay for the full matrix.
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -26,10 +29,16 @@ jobs:
         # platform is used, and the ubuntu-latest image ships without them.
         # The gui extra installs PyQt6 in this job, so the headless
         # pytest-qt suite needs these system libraries present.
-        # ForceIPv4 avoids the known apt-get update stall on the runner's
-        # mirrors, and the timeout keeps a pathological runner from hanging
-        # the whole job for a quarter of an hour.
-        run: timeout 300 sudo apt-get update -o Acquire::ForceIPv4=true && sudo apt-get install -y libegl1 libgl1 libxkbcommon0
+        # The runner's apt/network has intermittently stalled hard (17 min
+        # hangs observed); ForceIPv4 avoids the IPv6 mirror stall, bounded
+        # retries make a stall degrade instead, and `|| true` lets the install
+        # go ahead from whatever lists are already present.
+        run: |
+          for i in 1 2 3; do
+            timeout 80 sudo apt-get update -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=20 && break
+            sleep 5
+          done
+          sudo apt-get install -y -o Acquire::http::Timeout=20 libegl1 libgl1 libxkbcommon0
 
       - name: Install dependencies
         # --extra gui because the GUI tests need PyQt6, which is deliberately not
