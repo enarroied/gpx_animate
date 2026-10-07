@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  # Also lets the Windows build be kicked off by hand (and by v* tags).
+  workflow_dispatch:
 
 jobs:
   check:
@@ -67,3 +69,67 @@ jobs:
           # coverage floor locally.
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  # PyInstaller cannot cross-compile, so the Windows artifact is produced on a
+  # Windows runner. Triggered manually or by a v* tag; normal pushes and PRs do
+  # not pay for it. The Linux equivalent is verified locally (see AGENTS).
+  build-windows:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --locked --extra gui
+
+      - name: Download a static ffmpeg for the portable folder
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+        # find_ffmpeg() prefers a binary beside the program over PATH, so the
+        # release folder carries its own ffmpeg.exe — the portable-folder model.
+
+      - name: Build the frozen binaries
+        run: uv run pyinstaller packaging/gpx-animate.spec --noconfirm
+
+      - name: Bundle ffmpeg beside the executables
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $ffmpeg.FullName dist\ffmpeg.exe
+        # Both dist\gpx-animate-gui.exe and dist\gpx-animate.exe find it.
+
+      - name: Render smoke test under freeze (real Windows, offline)
+        # The GUI cannot be driven head-first here, so the console binary runs
+        # the identical frozen render path: ffmpeg-beside-the-exe, H.264 output.
+        shell: pwsh
+        run: |
+          $gpx = Get-ChildItem data -Filter *.gpx | Select-Object -First 1
+          & dist\gpx-animate.exe $gpx.FullName --style none --duration 0.2 --fps 5 --hold 0 --out $env:RUNNER_TEMP\smoke.mp4
+          if (-not (Test-Path $env:RUNNER_TEMP\smoke.mp4)) { throw "no smoke.mp4 produced" }
+
+      - name: Collect the portable folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path portable
+          Copy-Item dist\gpx-animate-gui.exe portable\
+          Copy-Item dist\ffmpeg.exe portable\
+          Compress-Archive -Path portable\* -DestinationPath gpx-animate-gui-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpx-animate-gui-windows
+          path: gpx-animate-gui-windows.zip
+
+      - name: Attach to the release (tagged runs only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: gpx-animate-gui-windows.zip
