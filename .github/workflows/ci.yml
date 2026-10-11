@@ -3,15 +3,19 @@ name: ci
 on:
   push:
     branches: [master]
+    # v* tags fire the Windows build. Without this the tag event never reaches
+    # the file, so build-windows's refs/tags/ guard below could never evaluate.
+    tags: ['v*']
   pull_request:
-  # Also lets the Windows build be kicked off by hand (and by v* tags).
+  # Also lets the Windows build be kicked off by hand.
   workflow_dispatch:
 
 jobs:
   check:
     # Dispatch runs exist to produce the Windows artifact; they must not also
-    # re-pay for the full matrix.
-    if: github.event_name != 'workflow_dispatch'
+    # re-pay for the full matrix. A tag deletion is a push event with an
+    # all-zero SHA that would fail at checkout, so it is excluded too.
+    if: github.event_name != 'workflow_dispatch' && github.event.deleted != true
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -80,10 +84,11 @@ jobs:
           fail_ci_if_error: false
 
   # PyInstaller cannot cross-compile, so the Windows artifact is produced on a
-  # Windows runner. Triggered manually or by a v* tag; normal pushes and PRs do
-  # not pay for it. The Linux equivalent is verified locally (see AGENTS).
+  # Windows runner. Triggered by a v* tag or manually; normal pushes and PRs do
+  # not pay for it. The Linux equivalent is verified locally (see AGENTS). The
+  # deleted guard keeps a tag deletion (all-zero SHA) from failing at checkout.
   build-windows:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) && github.event.deleted != true
     runs-on: windows-latest
     permissions:
       contents: write
