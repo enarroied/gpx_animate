@@ -166,6 +166,14 @@ Stage the release files explicitly — `git commit -a` will sweep in unrelated
 work-in-progress edits. Same reason: any user-visible change updates
 `CHANGELOG.md` in the same commit.
 
+Pushing a `v*` tag fires `build-windows` only because `on.push.tags` exists — a
+bare `branches:` trigger never sees tag pushes. And GitHub evaluates the
+workflow **from the tagged commit**, not from `master`: a tag whose commit
+predates a CI fix will silently produce no run. When that happens, re-point the
+tag at the commit carrying the fixed workflow (`git tag -a v0.2.0 <commit>` after
+deleting the old one) and push again; the attach step updates the already-
+published release.
+
 ## Gotchas in the package
 
 - **`domain/` must stay pure.** No matplotlib, contextily, requests, PyQt, gpxpy
