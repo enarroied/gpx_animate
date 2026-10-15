@@ -287,29 +287,77 @@ class TestPalette:
         assert frame_count(out) > 0
 
     def test_the_dither_choice_reaches_pillow(self, frames, tmp_path, monkeypatch):
-        """Assert the argument rather than inferring it from the bytes."""
+        """Assert the argument rather than inferring it from the bytes.
+
+        Dithering moved to ``quantize``: frames are mapped onto one shared
+        palette before saving, so that is where the choice is applied.
+        """
         seen = {}
-        original = Image.Image.save
+        original = Image.Image.quantize
 
-        def spy(self, fp, **kwargs):
+        def spy(self, **kwargs):
             seen.update(kwargs)
-            return original(self, fp, **kwargs)
+            return original(self, **kwargs)
 
-        monkeypatch.setattr(Image.Image, "save", spy)
+        monkeypatch.setattr(Image.Image, "quantize", spy)
         encode(frames, tmp_path / "s.gif", dither=False)
         assert seen["dither"] == Image.Dither.NONE
 
     def test_dither_on_selects_floyd_steinberg(self, frames, tmp_path, monkeypatch):
         seen = {}
-        original = Image.Image.save
+        original = Image.Image.quantize
 
-        def spy(self, fp, **kwargs):
+        def spy(self, **kwargs):
             seen.update(kwargs)
-            return original(self, fp, **kwargs)
+            return original(self, **kwargs)
 
-        monkeypatch.setattr(Image.Image, "save", spy)
+        monkeypatch.setattr(Image.Image, "quantize", spy)
         encode(frames, tmp_path / "t.gif", dither=True)
         assert seen["dither"] == Image.Dither.FLOYDSTEINBERG
+
+    def test_every_frame_is_quantised_against_one_palette(
+        self, frames, tmp_path, monkeypatch
+    ):
+        """The bug this pins: per-frame palettes shifted the colours.
+
+        Quantising each frame on its own gives each its own palette, but only the
+        first frame's table is written, so every later frame decodes against the
+        wrong colours. Every ``quantize`` call on a frame must therefore be handed
+        the *same* palette image.
+        """
+        palettes = []
+        original = Image.Image.quantize
+
+        def spy(self, **kwargs):
+            if "palette" in kwargs:
+                palettes.append(kwargs["palette"])
+            return original(self, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "quantize", spy)
+        encode(frames, tmp_path / "shared.gif", mp4_fps=5)
+        assert len(palettes) == 12
+        assert len({id(palette) for palette in palettes}) == 1
+
+    def test_a_colour_change_survives_between_frames(self, tmp_path):
+        """A two-tone clip must actually show both tones.
+
+        On the buggy path the second tone's indices were read against the first
+        frame's palette, so a red-then-blue clip played as red-then-red.
+        """
+        frame_dir = tmp_path / "twotone"
+        frame_dir.mkdir()
+        Image.new("RGB", (32, 32), (220, 30, 30)).save(frame_dir / (FRAME_NAME % 0))
+        Image.new("RGB", (32, 32), (30, 30, 220)).save(frame_dir / (FRAME_NAME % 1))
+        out = encode(
+            frame_dir, tmp_path / "twotone.gif", size="32x32", fps=2, mp4_fps=2
+        )
+        with Image.open(out) as gif:
+            gif.seek(0)
+            first = ImageStat.Stat(gif.convert("RGB")).mean
+            gif.seek(1)
+            second = ImageStat.Stat(gif.convert("RGB")).mean
+        assert first[0] > first[2], first
+        assert second[2] > second[0], second
 
 
 class TestLoop:

@@ -15,6 +15,17 @@ Compare links are added at release time. The first release has no v0.0.0 tag to
 See AGENTS.md -> Versioning & releases.
 -->
 
+## [Unreleased]
+
+### Fixed
+
+- **GIF frames changed colour as the clip played.** Pillow was handed
+  `palette=Image.Palette.ADAPTIVE` on a multi-frame save, so it quantised every
+  frame to its own adaptive palette — but wrote only the first frame's table as
+  the GIF's global one. Each later frame's indices were then decoded against the
+  wrong colours, so a photographic basemap could shift hue between frames. All
+  frames now share one palette, built from an evenly-spaced spread of the clip.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added

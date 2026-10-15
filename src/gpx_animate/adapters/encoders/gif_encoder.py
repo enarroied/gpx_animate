@@ -3,6 +3,10 @@
 Downscales the frames the MP4 is already using rather than re-rendering them: a
 second render pass would cost more than the saving. The target size is honoured
 exactly, cropping rather than distorting when the aspect ratios disagree.
+
+Every frame is mapped through one shared palette rather than letting Pillow
+quantise each on its own, which would shift colours mid-clip; see
+:meth:`PillowGifEncoder.encode`.
 """
 
 from __future__ import annotations
@@ -149,16 +153,40 @@ class PillowGifEncoder:
             for path in sampled
         ]
 
-        frames[0].save(
+        dither = Image.Dither.FLOYDSTEINBERG if config.dither else Image.Dither.NONE
+
+        # One palette for the whole clip. Quantising each frame on its own gives
+        # each its own palette, while Pillow writes only the first frame's table
+        # as the GIF's global one -- every later frame's indices are then decoded
+        # against the wrong colours, which reads as the basemap shifting hue as
+        # the clip plays. A spread of the frames is tiled into one mosaic and
+        # quantised once; every frame is then mapped through that single palette.
+        step = max(1, len(frames) // 8)
+        sample = frames[::step]
+        mosaic = Image.new(
+            "RGB",
+            (
+                sum(frame.width for frame in sample),
+                max(frame.height for frame in sample),
+            ),
+        )
+        x = 0
+        for frame in sample:
+            mosaic.paste(frame, (x, 0))
+            x += frame.width
+        palette = mosaic.quantize(colors=config.colors)
+
+        palette_frames = [
+            frame.quantize(palette=palette, dither=dither) for frame in frames
+        ]
+
+        palette_frames[0].save(
             str(out_path),
             save_all=True,
-            append_images=frames[1:],
+            append_images=palette_frames[1:],
             duration=frame_delay_ms(config.fps),
             loop=config.loop,
             optimize=True,
-            palette=Image.Palette.ADAPTIVE,
-            colors=config.colors,
-            dither=Image.Dither.FLOYDSTEINBERG if config.dither else Image.Dither.NONE,
         )
 
         logger.info(
