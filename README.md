@@ -152,7 +152,7 @@ go.
 | `--gif` | flag | off | Also write a GIF alongside the MP4, from the same frames |
 | `--gif-size` | str | `800x450` | GIF pixel size, `WIDTHxHEIGHT` |
 | `--gif-fps` | int | `15` | GIF frame rate; frames above it are sampled down |
-| `--gif-colors` | int | `128` | Palette size: `64`, `128` or `256` |
+| `--gif-colors` | int | `256` | Palette size: `64`, `128` or `256` |
 | `--gif-dither` | flag | off | Dither the palette, trading bytes for smoother gradients |
 | `--gif-loop` | int | `0` | Repeat count; `0` loops forever |
 | `--profile` | enum | `off` | Elevation chart position: `off`, `top`, `bottom`, `top-left`, `top-right`, `bottom-left`, `bottom-right` |
@@ -229,7 +229,9 @@ uv run gpx-animate my_trip.gpx --gif --gif-size 640x360 --gif-fps 12
 ```
 
 The GIF is built from the frames the video already used, so it costs no second
-render — the only extra work is quantising to a palette. A GIF cannot hold
+render — the only extra work is quantising to a palette. All frames share one
+palette, so a colour cannot drift from one frame to the next; `--gif-colors`
+sets how many entries it has (default 256). A GIF cannot hold
 30 fps cheaply, so `--gif-fps` samples the frames down (`--gif-fps 15` against a
 30 fps render keeps every other frame).
 
@@ -342,7 +344,7 @@ a config file or the environment.
 | `gif.enabled` | bool | `false` | Write a GIF alongside the MP4 |
 | `gif.size` | str | `800x450` | GIF pixel size, `WIDTHxHEIGHT` |
 | `gif.fps` | int | `15` | GIF frame rate; frames above it are sampled down |
-| `gif.colors` | int | `128` | Palette size: `64`, `128` or `256` |
+| `gif.colors` | int | `256` | Palette size: `64`, `128` or `256` |
 | `gif.dither` | bool | `false` | Dither the palette |
 | `gif.loop` | int | `0` | Repeat count; `0` loops forever |
 | `profile` | str | `off` | Elevation chart position; see `--profile` |

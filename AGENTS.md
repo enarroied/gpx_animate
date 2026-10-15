@@ -40,7 +40,7 @@ src/gpx_animate/
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 909 tests: 901 offline plus 8
+  floor in `[tool.coverage.report] fail_under`. 912 tests: 904 offline plus 8
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
@@ -77,6 +77,17 @@ src/gpx_animate/
   a still image and yields a 2-frame GIF whose second frame holds 1200 ms. The
   log line reports frames *sampled*, not frames *written*. Do not "fix" this by
   passing `optimize=False`.
+- **One shared GIF palette, never `palette=ADAPTIVE` on the save.** Handing
+  Pillow `palette=Image.Palette.ADAPTIVE` on a multi-frame `save()` makes it
+  quantise *each* frame to its own adaptive palette (`GifImagePlugin._normalize_mode`)
+  but write only the *first* frame's table as the global one — and because
+  `palette` is truthy it never marks the later frames as carrying a local table,
+  so their indices are decoded against the wrong colours and the basemap shifts
+  hue mid-clip. `PillowGifEncoder` therefore builds one master palette from a
+  spread of frames and maps every frame through it with `quantize(palette=...)`,
+  saving without `palette=`/`colors=`. Dithering lives on that `quantize`, not on
+  the `save`; `GifConfig.colors` defaults to 256, and the flag still accepts only
+  64/128/256.
 - **`export_video` takes `gif_encoder` and `chart_frames` as keywords, defaulting
   to `None`, and never imports an adapter.** The CLI injects both and is also
   where `require_pillow()` runs, so a missing Pillow is a one-line exit before a
@@ -111,7 +122,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 900 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 904 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```

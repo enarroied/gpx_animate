@@ -343,6 +343,10 @@ class TestGifConfig:
         """Dithering costs bytes, so it has to be asked for."""
         assert GifConfig().dither is False
 
+    def test_colors_defaults_to_the_largest_palette(self):
+        """256 by default: the smaller sizes are an opt-in size saving."""
+        assert GifConfig().colors == 256
+
     def test_it_is_frozen(self):
         with pytest.raises(FrozenInstanceError):
             GifConfig().enabled = True  # ty: ignore[invalid-assignment]

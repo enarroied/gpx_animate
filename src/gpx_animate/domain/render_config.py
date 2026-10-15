@@ -59,7 +59,7 @@ class GifConfig:
     enabled: bool = False
     size: str = "800x450"
     fps: int = 15
-    colors: int = 128
+    colors: int = 256
     dither: bool = False
     loop: int = 0
 

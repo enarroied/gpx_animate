@@ -26,6 +26,12 @@ See AGENTS.md -> Versioning & releases.
   wrong colours, so a photographic basemap could shift hue between frames. All
   frames now share one palette, built from an evenly-spaced spread of the clip.
 
+### Changed
+
+- **The GIF palette defaults to 256 colours** (was 128). `--gif-colors` /
+  `gif.colors` still accept `64`, `128` or `256`; 256 is now the default because
+  the coarser palettes band visibly on basemaps.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added
