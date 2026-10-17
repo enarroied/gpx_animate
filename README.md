@@ -159,7 +159,7 @@ go.
 | `--profile-height` | float | `0.15` | Chart height as a fraction of the frame height |
 | `--profile-width` | float | `0.28` | Chart width as a fraction of the frame width; ignored by the `top` and `bottom` strips, which span the frame |
 | `--chart-video` | flag | off | Also write the elevation chart as its own video |
-| `--margin` | float | `0.15` | Fractional margin around the track bounding box |
+| `--margin` | float | `0.15` | Minimum margin around the track bbox, as a fraction |
 | `--bounds` | str | — | Fixed view `min_lon,min_lat,max_lon,max_lat` in degrees; overrides `--margin` |
 | `--log-level` | enum | `info` | `debug`, `info`, `warning`, `error` |
 
@@ -179,6 +179,11 @@ uv run gpx-animate my_trip.gpx --bounds 2.35,48.85,2.40,48.90
 `--bounds` replaces the margin-derived view entirely (the track need not reach
 the frame edges), and is rejected up front if the corners are reversed or
 outside `[-180, 180]` × `[-90, 90]`.
+
+Either way the view is then matched to the output frame's aspect ratio: the
+shorter side is grown, never cropped, so the map fills the frame without being
+stretched. A tall track in the default 16:9 frame therefore shows more ground
+to its left and right; `--size 9:16` keeps it tighter.
 
 ### Logos
 
@@ -331,7 +336,7 @@ a config file or the environment.
 | `fps` | int | `30` | Frame rate for both phases |
 | `size` | str | `16:9` | `16:9`, `1:1` or `9:16` |
 | `dpi` | int | `150` | Render resolution in dots per inch; no CLI flag |
-| `margin` | float | `0.15` | Padding around the track bbox, as a fraction |
+| `margin` | float | `0.15` | Minimum padding around the track bbox, as a fraction |
 | `bounds` | str | *(none)* | Fixed view `min_lon,min_lat,max_lon,max_lat`; wins over `margin` |
 | `out` | path | *(none)* | Output file; blank means "generate one" |
 | `output_dir` | path | `output` | Where the generated name goes |

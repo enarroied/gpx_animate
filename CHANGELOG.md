@@ -19,6 +19,15 @@ See AGENTS.md -> Versioning & releases.
 
 ### Fixed
 
+- **A track whose shape did not match the frame was drawn stretched, with a
+  blurred basemap.** The view was stretched to fill the output frame, so a
+  tall/narrow track in the default 16:9 frame came out several times wider than
+  it should be, and its basemap was upsampled to match — the horizontal upscaling
+  reached 8.5× on a 1.2 km × 4.4 km track. The view is now grown to the output
+  frame's aspect ratio (the short side only, never cropped), so there is nothing
+  left for matplotlib to distort. An explicit `--bounds` window is fitted the
+  same way.
+
 - **GIF frames changed colour as the clip played.** Pillow was handed
   `palette=Image.Palette.ADAPTIVE` on a multi-frame save, so it quantised every
   frame to its own adaptive palette — but wrote only the first frame's table as

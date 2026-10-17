@@ -283,12 +283,26 @@ class MatplotlibRenderer:
         # Bounds with padding. A degenerate track (a single point, or a straight
         # east-west line) has zero extent on one axis; Bbox.padded falls back to
         # a one-unit pad there so the view is still drawable.
+        # The view is then fitted to the frame's aspect. The axes is left at
+        # matplotlib's default "auto", which stretches whatever it is given to
+        # fill the frame, so a view whose ratio differs from the output's comes
+        # out distorted and the basemap is resampled to match. Fitting the view
+        # here means there is no difference left to stretch. See
+        # Bbox.fit_aspect: only the short axis grows, so nothing is cropped.
+        frame_aspect = width / height
         if config.bounds is not None:
             # The user fixed the view, so the track's own extent and any margin
-            # are irrelevant: show exactly the requested window.
-            view = _projected_bounds(config.bounds, transformer)
+            # are irrelevant: show the requested window, grown to the frame
+            # shape if it does not already match it.
+            view = _projected_bounds(config.bounds, transformer).fit_aspect(
+                frame_aspect
+            )
         else:
-            view = Bbox(X.min(), Y.min(), X.max(), Y.max()).padded(config.margin)
+            view = (
+                Bbox(X.min(), Y.min(), X.max(), Y.max())
+                .padded(config.margin)
+                .fit_aspect(frame_aspect)
+            )
         ax.set_xlim(view.min_x, view.max_x)
         ax.set_ylim(view.min_y, view.max_y)
 

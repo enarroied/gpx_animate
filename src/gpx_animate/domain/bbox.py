@@ -10,6 +10,7 @@ rather than as an error.
 
 from __future__ import annotations
 
+import math
 from typing import NamedTuple
 
 
@@ -129,6 +130,62 @@ class Bbox(NamedTuple):
             self.min_y - pad_y,
             self.max_x + pad_x,
             self.max_y + pad_y,
+        )
+
+    def fit_aspect(self, aspect: float) -> Bbox:
+        """Grow the shorter axis until the box has the requested width/height.
+
+        The renderer draws with matplotlib's default ``aspect="auto"``, so a
+        view whose ratio differs from the frame's is stretched to fill it: a
+        tall track in a 16:9 frame comes out six times wider than it should be,
+        and the basemap is upsampled to match. Matching the view to the frame
+        here removes the stretch, because the two ratios then agree and there is
+        nothing left for matplotlib to distort.
+
+        Only the short axis grows, and it grows around its centre, so the box
+        always *contains* the one it came from: the track is never cropped and
+        never moves off centre. The cost is showing more of whatever is beside
+        the track, which is the honest thing to do when the output shape is not
+        the track's shape.
+
+        Args:
+            aspect: Width divided by height, e.g. ``16 / 9`` for a landscape
+                frame. Frame presets are the caller's business; this only
+                applies the ratio.
+
+        Returns:
+            A box with ``width / height == aspect``, containing ``self``.
+
+        Raises:
+            ValueError: If ``aspect`` is not positive, which would otherwise
+                produce a box with no width or no height.
+        """
+        if aspect <= 0:
+            raise ValueError(f"aspect must be > 0, got {aspect}")
+        current = self.width / self.height
+        if math.isclose(current, aspect, rel_tol=1e-9):
+            # Already the right shape. The tolerance matters: growing an axis
+            # sets the ratio to height * aspect / height, which is only equal to
+            # ``aspect`` to within a rounding error, so without this a second
+            # call would shave a fraction of a unit off a box that is already
+            # correct.
+            return self
+        if current < aspect:
+            width = self.height * aspect
+            centre_x = (self.min_x + self.max_x) / 2
+            return Bbox(
+                centre_x - width / 2,
+                self.min_y,
+                centre_x + width / 2,
+                self.max_y,
+            )
+        height = self.width / aspect
+        centre_y = (self.min_y + self.max_y) / 2
+        return Bbox(
+            self.min_x,
+            centre_y - height / 2,
+            self.max_x,
+            centre_y + height / 2,
         )
 
 

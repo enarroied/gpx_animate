@@ -40,7 +40,7 @@ src/gpx_animate/
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 912 tests: 904 offline plus 8
+  floor in `[tool.coverage.report] fail_under`. 925 tests: 917 offline plus 8
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
@@ -122,7 +122,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 904 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 917 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -245,7 +245,8 @@ published release.
   because config_from_args applies only flags over the layered base — the
   COERCERS do not run for flags — so `config_from_args` re-parses `bounds` by
   hand. `bounds` replaces the padded view entirely in the renderer, margin and
-  the one-unit degenerate floor included.
+  the one-unit degenerate floor included — but it is then grown to the frame's
+  aspect ratio like any other view (see the `fit_aspect` gotcha below).
 - Frame count is `int(duration*fps) + int(hold*fps)` and the truncation is
   intentional: a sub-frame phase disappears and the clip can come out shorter
   than `duration + hold`. Hold frames reuse the final state, so they are
@@ -305,6 +306,20 @@ published release.
   matplotlib's `(min_x, max_x, min_y, max_y)`. The mix-up is silent — both are
   four floats — so the conversion is pinned by tests. Rasterio `array_bounds`
   returns `(west, south, east, north)`, a third order.
+- **Every view the renderer computes goes through `Bbox.fit_aspect(frame_aspect)`**,
+  because the axes is left at matplotlib's default `aspect="auto"` and stretches
+  whatever shape it is handed to fill the frame. A tall track in a 16:9 frame used
+  to come out 6.4× too wide, with the basemap upscaled 8.5× horizontally to match
+  (measurable as horizontal gradients 4× softer than vertical). `fit_aspect` grows
+  the *short* axis about the centre — never crops, never shrinks — so it is a fit,
+  not padding, and it is applied to an explicit `--bounds` window too. The axes box
+  equals the figure after `set_axis_off()` + `tight_layout(pad=0)` (verified: 0.000%
+  off for all three presets), so the fit target is the plain `size_inches` ratio.
+  Do not "fix" the stretch with `ax.set_aspect`; pin the view instead. The fit is
+  expand-only and idempotent (the "already matches" branch has a `rel_tol=1e-9`
+  guard, without which a second call shaves a rounding-error sliver off the box).
+  This is not the zoom/upsampling work — `get_image` still asks for `zoom="auto"`
+  from the padded+fitted view, and a low zoom is a separate, unfixed blur source.
 - **The CLI reads the developer's own environment and `~/.config`.** `main()` calls
   `load_config(Path.cwd())`, so `tests/adapters/cli/test_cli_main.py` has an autouse
   `hermetic_config` fixture that strips `GPX_ANIMATE_*` from `os.environ`, points

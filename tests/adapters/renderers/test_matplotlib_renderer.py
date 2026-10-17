@@ -37,7 +37,9 @@ from gpx_animate.application.ports import frames_are_sequential  # noqa: E402
 from gpx_animate.domain.bbox import Bbox  # noqa: E402
 from gpx_animate.domain.logo import LOGO_ANCHORS  # noqa: E402
 from gpx_animate.domain.render_config import DEFAULT_STYLE  # noqa: E402
+from gpx_animate.domain.render_config import SIZE_PRESETS  # noqa: E402
 from gpx_animate.domain.render_config import RenderConfig  # noqa: E402
+from gpx_animate.domain.track import Point  # noqa: E402
 from gpx_animate.domain.track import Track  # noqa: E402
 
 
@@ -165,15 +167,19 @@ class TestBasemapPort:
         assert padded.height > tight.height
         assert padded.min_x < tight.min_x and padded.max_x > tight.max_x
 
-    def test_the_provider_is_asked_for_exactly_the_padded_view(self, track, tmp_path):
-        """The port is handed the final view, already padded: if the renderer
-        asked for the bare track and padded the image itself, a partial raster
-        would arrive at the wrong size."""
+    def test_the_provider_is_asked_for_the_final_view(self, track, tmp_path):
+        """The port is handed the finished view: padded to the margin, then grown
+        to the frame's aspect. If the renderer asked for the bare track and
+        padded the image itself, a partial raster would arrive at the wrong
+        size."""
         transformer = pyproj.Transformer.from_crs(
             "EPSG:4326", "EPSG:3857", always_xy=True
         )
         xs, ys = transformer.transform(track.longitudes, track.latitudes)
-        expected = Bbox(xs.min(), ys.min(), xs.max(), ys.max()).padded(0.15)
+        frame = SIZE_PRESETS["16:9"][0] / SIZE_PRESETS["16:9"][1]
+        expected = (
+            Bbox(xs.min(), ys.min(), xs.max(), ys.max()).padded(0.15).fit_aspect(frame)
+        )
         basemap = FakeBasemap()
         MatplotlibRenderer(basemap, FakeLogoLoader()).render(
             RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, margin=0.15),
@@ -184,7 +190,8 @@ class TestBasemapPort:
 
     def test_explicit_bounds_replace_the_margin(self, track, tmp_path):
         """--bounds fixes the view: the track's own extent is irrelevant, and
-        neither the margin nor the degenerate-track floor applies."""
+        neither the margin nor the degenerate-track floor applies. The window is
+        still grown to the frame's aspect, which is a fit and not a pad."""
         window = Bbox(2.30, 48.80, 2.50, 49.00)
         basemap = FakeBasemap()
         MatplotlibRenderer(basemap, FakeLogoLoader()).render(
@@ -198,22 +205,102 @@ class TestBasemapPort:
             "EPSG:4326", "EPSG:3857", always_xy=True
         )
         x, y = transformer.transform([2.30, 2.50], [48.80, 49.00])
-        x, y = np.asarray(x), np.asarray(y)
-        assert basemap.calls[0]["bbox"] == Bbox(x.min(), y.min(), x.max(), y.max())
+        raw = Bbox(min(x), min(y), max(x), max(y))
+        assert basemap.calls[0]["bbox"] == raw.fit_aspect(
+            SIZE_PRESETS["16:9"][0] / SIZE_PRESETS["16:9"][1]
+        )
 
     def test_bounds_are_not_padded_even_with_a_large_margin(self, track, tmp_path):
         """The margin is ignored entirely, not shrunk: both knobs are in the
-        same config and bounds wins outright."""
-        tight = self._view_for(
-            track, tmp_path, margin=0.1, bounds=Bbox(0.0, 0.0, 0.001, 0.001)
+        same config and bounds wins outright. The frame fit still applies, and
+        it grows the short axis only."""
+        window = Bbox(0.0, 0.0, 0.001, 0.001)
+        view = self._view_for(track, tmp_path, margin=0.1, bounds=window)
+        transformer = pyproj.Transformer.from_crs(
+            "EPSG:4326", "EPSG:3857", always_xy=True
         )
-        assert tight.width < 200
+        x, y = transformer.transform([0.0, 0.001], [0.0, 0.001])
+        raw_height = max(y) - min(y)
+        assert view.height == pytest.approx(raw_height)
+        assert view.width == pytest.approx(raw_height * 16 / 9)
 
     def test_a_degenerate_track_still_gets_a_drawable_view(self, tmp_path):
         """margin=0 is no *extra* padding; a one-unit floor keeps it drawable."""
         dot = Track.from_rows([(7.0, 45.0, 100.0)], name="Dot")
         view = self._view_for(dot, tmp_path, margin=0.0)
         assert view.width > 0 and view.height > 0
+
+
+class TestViewAspect:
+    """The view is fitted to the frame's shape, so nothing is stretched.
+
+    The axes is left at matplotlib's default ``aspect="auto"``, which stretches
+    the basemap to fill whatever shape it is given. Fitting the view to the
+    output aspect is what removes the stretch, so the shape the renderer asks
+    for must match the preset that produced it.
+    """
+
+    def _view_for(self, track, tmp_path, size):
+        basemap = FakeBasemap()
+        MatplotlibRenderer(basemap, FakeLogoLoader()).render(
+            RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, size=size),
+            track,
+            tmp_path / size,
+        )
+        return basemap.calls[0]["bbox"]
+
+    def test_a_tall_track_is_fitted_to_a_landscape_frame(self, tmp_path):
+        """A 1:6 track in a 16:9 frame, which is the shape that used to be
+        stretched six times wider than it should be."""
+        tall = Track(
+            points=(
+                Point(lon=7.00, lat=45.00, elevation=0.0),
+                Point(lon=7.01, lat=45.06, elevation=0.0),
+            ),
+            name="Tall",
+        )
+        view = self._view_for(tall, tmp_path, "16:9")
+        assert view.width / view.height == pytest.approx(12.8 / 7.2)
+
+    def test_a_wide_track_is_fitted_to_a_portrait_frame(self, tmp_path):
+        wide = Track(
+            points=(
+                Point(lon=7.00, lat=45.00, elevation=0.0),
+                Point(lon=7.30, lat=45.01, elevation=0.0),
+            ),
+            name="Wide",
+        )
+        view = self._view_for(wide, tmp_path, "9:16")
+        assert view.width / view.height == pytest.approx(7.2 / 12.8)
+
+    @pytest.mark.parametrize("size", sorted(SIZE_PRESETS))
+    def test_every_preset_gets_a_view_of_its_own_shape(self, track, tmp_path, size):
+        view = self._view_for(track, tmp_path, size)
+        width, height = SIZE_PRESETS[size]
+        assert view.width / view.height == pytest.approx(width / height)
+
+    def test_the_fit_never_crops_the_track(self, tmp_path):
+        """The fitted view must contain the padded one, or the track moves."""
+        tall = Track(
+            points=(
+                Point(lon=7.00, lat=45.00, elevation=0.0),
+                Point(lon=7.01, lat=45.06, elevation=0.0),
+            ),
+            name="Tall",
+        )
+        basemap = FakeBasemap()
+        MatplotlibRenderer(basemap, FakeLogoLoader()).render(
+            RenderConfig(duration=0.2, hold=0.0, fps=5, dpi=20, margin=0.0),
+            tall,
+            tmp_path,
+        )
+        view = basemap.calls[0]["bbox"]
+        transformer = pyproj.Transformer.from_crs(
+            "EPSG:4326", "EPSG:3857", always_xy=True
+        )
+        xs, ys = transformer.transform(tall.longitudes, tall.latitudes)
+        assert view.contains(Bbox(xs.min(), ys.min(), xs.max(), ys.max()))
+        assert view.min_y == pytest.approx(ys.min())
 
     def test_the_track_is_visible_against_the_background(
         self, renderer, track, tmp_path

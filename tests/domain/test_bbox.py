@@ -120,6 +120,47 @@ class TestPadded:
         assert once.padded(0.1).width == pytest.approx(14.4)
 
 
+class TestFitAspect:
+    """Matching a view to the output frame, so matplotlib has nothing to stretch."""
+
+    def test_a_narrow_box_grows_wider(self):
+        fitted = Bbox(0.0, 0.0, 1.0, 4.0).fit_aspect(2.0)
+        assert fitted.width / fitted.height == pytest.approx(2.0)
+        assert fitted.height == pytest.approx(4.0)
+
+    def test_a_wide_box_grows_taller(self):
+        fitted = Bbox(0.0, 0.0, 4.0, 1.0).fit_aspect(2.0)
+        assert fitted.width / fitted.height == pytest.approx(2.0)
+        assert fitted.width == pytest.approx(4.0)
+
+    def test_a_box_that_already_matches_is_returned_unchanged(self):
+        box = Bbox(0.0, 0.0, 4.0, 2.0)
+        assert box.fit_aspect(2.0) == box
+
+    def test_it_grows_around_the_centre(self):
+        """The track sits at the middle of its own box; the extra width is split
+        evenly so it stays there."""
+        fitted = Bbox(0.0, 0.0, 1.0, 4.0).fit_aspect(2.0)
+        assert (fitted.min_x + fitted.max_x) / 2 == pytest.approx(0.5)
+        assert (fitted.min_y + fitted.max_y) / 2 == pytest.approx(2.0)
+
+    def test_it_never_shrinks_the_box(self):
+        """Expanding is the only option: shrinking would crop whatever the
+        caller is trying to show."""
+        box = Bbox(10.0, 10.0, 20.0, 30.0)
+        assert box.fit_aspect(0.5).contains(box)
+        assert box.fit_aspect(9.0).contains(box)
+
+    def test_it_rejects_a_non_positive_aspect(self):
+        for aspect in (0.0, -1.0):
+            with pytest.raises(ValueError, match="aspect must be > 0"):
+                Bbox(0.0, 0.0, 1.0, 1.0).fit_aspect(aspect)
+
+    def test_the_result_is_idempotent(self):
+        once = Bbox(0.0, 0.0, 1.0, 5.0).fit_aspect(16 / 9)
+        assert once.fit_aspect(16 / 9) == once
+
+
 class TestParseBounds:
     """The ``--bounds`` "min_lon,min_lat,max_lon,max_lat" parsing and rejection."""
 
