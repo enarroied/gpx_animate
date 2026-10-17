@@ -227,6 +227,11 @@ class TestParser:
             "gpx",
             "style",
             "tiff",
+            "dem",
+            "hillshade_azimuth",
+            "hillshade_altitude",
+            "hillshade_z",
+            "hillshade_strength",
             "duration",
             "hold",
             "fps",
@@ -478,6 +483,40 @@ class TestConfigFromArgs:
         base = RenderConfig(logo_size_px=100)
         args = cli.build_parser().parse_args([str(short_track_gpx)])
         assert cli.config_from_args(args, base).logo_size_px == 100
+
+    def test_dem_flag_wires_through(self, short_track_gpx):
+        args = cli.build_parser().parse_args([str(short_track_gpx), "--dem", "auto"])
+        assert cli.config_from_args(args).dem == "auto"
+
+    def test_no_dem_flag_keeps_the_base(self, short_track_gpx):
+        base = RenderConfig(dem="/tmp/elsewhere.tif")
+        args = cli.build_parser().parse_args([str(short_track_gpx)])
+        assert cli.config_from_args(args, base).dem == "/tmp/elsewhere.tif"
+
+    def test_hillshade_flags_wire_through(self, short_track_gpx):
+        args = cli.build_parser().parse_args(
+            [
+                str(short_track_gpx),
+                "--hillshade-azimuth",
+                "90",
+                "--hillshade-altitude",
+                "30",
+                "--hillshade-z",
+                "2.0",
+                "--hillshade-strength",
+                "0.5",
+            ]
+        )
+        config = cli.config_from_args(args)
+        assert config.hillshade_azimuth == 90.0
+        assert config.hillshade_altitude == 30.0
+        assert config.hillshade_z == 2.0
+        assert config.hillshade_strength == 0.5
+
+    def test_no_hillshade_flags_keep_the_base(self, short_track_gpx):
+        base = RenderConfig(hillshade_azimuth=180.0, hillshade_z=3.0)
+        args = cli.build_parser().parse_args([str(short_track_gpx)])
+        assert cli.config_from_args(args, base) == base
 
     def test_force_keeps_the_layer_below_when_the_flag_is_absent(self, short_track_gpx):
         """store_true has to default to None, or a config file could not win."""

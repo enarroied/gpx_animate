@@ -265,6 +265,11 @@ def _button_enabled(window) -> bool:
 _PERTURBATIONS = {
     "style": lambda w: w.style_combo.setCurrentIndex(0),
     "tiff": lambda w: _set_text(w, "tiff_edit", "/tmp/other.tif"),
+    "dem": lambda w: _set_text(w, "dem_edit", "auto"),
+    "hillshade_azimuth": lambda w: w.hillshade_azimuth_spin.setValue(90.0),
+    "hillshade_altitude": lambda w: w.hillshade_altitude_spin.setValue(15.0),
+    "hillshade_z": lambda w: w.hillshade_z_spin.setValue(3.5),
+    "hillshade_strength": lambda w: w.hillshade_strength_spin.setValue(0.25),
     "duration": lambda w: w.duration_spin.setValue(7.0),
     "hold": lambda w: w.hold_spin.setValue(3.0),
     "fps": lambda w: w.fps_spin.setValue(11),
@@ -346,6 +351,26 @@ def test_the_logo_and_gif_and_chart_fields_round_trip_from_a_non_default_base(
             dither=False,
             loop=2,
         ),
+    )
+    win = MainWindow(base=loaded)
+    qtbot.addWidget(win)
+    assert win.current_config() == loaded
+
+
+def test_the_terrain_fields_round_trip_from_a_non_default_base(qtbot, base):
+    """The DEM and its shade controls must survive a trip through the widgets.
+
+    A separate test from the one above because ``--tiff`` and ``--dem`` are
+    mutually exclusive: the config refuses to hold both, so a single base
+    cannot exercise both round-trips at once.
+    """
+    loaded = dataclasses.replace(
+        base,
+        dem="/tmp/terrain.tif",
+        hillshade_azimuth=123.0,
+        hillshade_altitude=12.0,
+        hillshade_z=4.0,
+        hillshade_strength=0.2,
     )
     win = MainWindow(base=loaded)
     qtbot.addWidget(win)
@@ -504,13 +529,14 @@ def test_the_size_combo_offers_every_preset():
 # --- window behaviour ------------------------------------------------------
 
 
-def test_the_nine_tabs_are_all_there(qtbot, window):
+def test_the_ten_tabs_are_all_there(qtbot, window):
     """A tab that goes missing hides fields with no test failing."""
     tabs = window.findChild(QTabWidget)
     labels = [tabs.tabText(i) for i in range(tabs.count())]
     assert labels == [
         "Source",
         "Map",
+        "Terrain",
         "Timing",
         "Look",
         "Logos",

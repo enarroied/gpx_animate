@@ -17,6 +17,30 @@ See AGENTS.md -> Versioning & releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Relief shading (hillshade / topographic overlay).** A new `--dem` flag
+  shades the basemap live from elevation values instead of drawing imagery:
+  - `--dem auto` downloads and caches the public Copernicus GLO-30 tile(s)
+    covering the view from AWS — no account, no key — under the XDG cache, so a
+    second render of the same area is offline.
+  - `--dem PATH` reads a local elevation GeoTIFF; it is reprojected if it is not
+    already in the render's Web Mercator frame and must overlap the view.
+  - `--style none --dem …` produces a pure grey hillshade; with tiles it gives
+    the usual "terrain" look, the shade multiplied over the map and the
+    provider's attribution preserved.
+  - `--tiff` and `--dem` are mutually exclusive (imagery vs. elevation) and
+    giving both is a clear error rather than an arbitrary winner.
+  - Four knobs tune the light and the blend: `--hillshade-azimuth` (315),
+    `--hillshade-altitude` (45), `--hillshade-z` (1.0, vertical exaggeration)
+    and `--hillshade-strength` (1.0, blend fraction). Each is a `RenderConfig`
+    key, settable from TOML and `GPX_ANIMATE_*`, and mirrored in the GUI's new
+    **Terrain** tab alongside a DEM browse field.
+  - Known limitation, documented rather than hidden: shading runs in Web Mercator,
+    whose ground distance is inflated by `1/cos(latitude)`, so relief reads
+    about 30 % flatter near latitude 43. `--hillshade-z` is the intended
+    compensation (roughly `1/cos(lat)`).
+
 ### Fixed
 
 - **A one-band `--tiff` basemap was drawn as a rainbow heatmap, not grey.** The

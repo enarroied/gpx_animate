@@ -118,6 +118,10 @@ COERCERS: dict[str, Callable[[Any], Any]] = {
     "profile_height": float,
     "profile_width": float,
     "chart_video": _to_bool,
+    "hillshade_azimuth": float,
+    "hillshade_altitude": float,
+    "hillshade_z": float,
+    "hillshade_strength": float,
 }
 """How each non-string key is converted. Everything else is a string."""
 

@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from gpx_animate.application.ports import BasemapImage
+from gpx_animate.application.ports import ElevationRaster
 from gpx_animate.application.ports import Logo
 from gpx_animate.application.ports import RenderResult
 from gpx_animate.domain.bbox import Bbox
@@ -132,6 +133,49 @@ class FakeBasemap:
             extent=self.extent or bbox.extent,
             crs=crs,
             attribution=self.attribution,
+        )
+
+
+class FakeElevation:
+    """An ElevationProvider that records the call instead of reading a raster.
+
+    Attributes:
+        image: The ``(rows, cols)`` elevations :meth:`get_raster` returns. A
+            small east-west ramp by default, so a shade over it has contrast
+            without needing a real terrain file.
+        extent: Extent to claim, or ``None`` to cover whatever was asked for.
+        nodata: The no-data value to report, if any.
+    """
+
+    def __init__(
+        self,
+        image: np.ndarray | None = None,
+        extent: tuple[float, float, float, float] | None = None,
+        nodata: float | None = None,
+    ) -> None:
+        self.calls: list[dict[str, Any]] = []
+        if image is None:
+            image = np.tile(np.arange(4, dtype=float) * 100.0, (4, 1))
+        self.image = image
+        self.extent = extent
+        self.nodata = nodata
+
+    def get_raster(self, bbox: Bbox, crs: str) -> ElevationRaster:
+        """Record that elevations were requested and hand back a fixed grid.
+
+        Args:
+            bbox: Recorded, so tests can assert which area was asked for.
+            crs: Recorded, so tests can assert which projection was requested.
+
+        Returns:
+            The fixed grid, over :attr:`extent` or the whole of ``bbox``.
+        """
+        self.calls.append({"bbox": bbox, "crs": crs})
+        return ElevationRaster(
+            image=self.image,
+            extent=self.extent or bbox.extent,
+            crs=crs,
+            nodata=self.nodata,
         )
 
 

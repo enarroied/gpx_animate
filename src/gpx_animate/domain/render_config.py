@@ -27,6 +27,9 @@ SIZE_PRESETS: dict[str, tuple[float, float]] = {
 DEFAULT_OUTPUT_DIR = Path("output")
 """Where renders land when ``--out`` is not given, relative to the cwd."""
 
+DEM_AUTO = "auto"
+"""The ``--dem`` value meaning "download and cache Copernicus tiles"."""
+
 PROFILE_EDGE_MARGIN = 0.02
 """Axes fraction kept clear between a corner chart and the frame edge."""
 
@@ -126,6 +129,14 @@ class RenderConfig:
         tiff: Optional local GeoTIFF to use instead of downloaded tiles. Wins
             over ``style``, since bringing your own imagery leaves no choice to
             make about a tile server.
+        dem: Optional elevation model used to shade the basemap with relief,
+            either ``"auto"`` (download and cache Copernicus GLO-30 tiles) or a
+            path to a local GeoTIFF of elevations in metres.
+        hillshade_azimuth: Light direction in degrees clockwise from north.
+        hillshade_altitude: Light elevation above the horizon in degrees.
+        hillshade_z: Vertical exaggeration; ``1.0`` is true relief.
+        hillshade_strength: How far toward a full multiply the shade is applied,
+            ``0..1``. ``0`` leaves the basemap untouched.
         appearance: Colours and font.
 
     Raises:
@@ -149,6 +160,11 @@ class RenderConfig:
     logo_size_px: int | None = None
     logo_plate_padding: float = 0.0
     tiff: Path | None = None
+    dem: str | None = None
+    hillshade_azimuth: float = 315.0
+    hillshade_altitude: float = 45.0
+    hillshade_z: float = 1.0
+    hillshade_strength: float = 1.0
     appearance: Style = DEFAULT_STYLE
     gif: GifConfig = GifConfig()
     profile: str = "off"
@@ -195,6 +211,27 @@ class RenderConfig:
                 raise ValueError(f"{field} must be between 0 and 1, got {value}")
         if self.bounds is not None:
             validate_bounds(self.bounds)
+        if self.dem is not None and not self.dem.strip():
+            raise ValueError("dem must be 'auto' or a path to a GeoTIFF, not empty")
+        if not 0.0 <= self.hillshade_azimuth <= 360.0:
+            raise ValueError(
+                f"hillshade_azimuth must be in 0..360, got {self.hillshade_azimuth}"
+            )
+        if not 0.0 <= self.hillshade_altitude <= 90.0:
+            raise ValueError(
+                f"hillshade_altitude must be in 0..90, got {self.hillshade_altitude}"
+            )
+        if self.hillshade_z <= 0.0:
+            raise ValueError(f"hillshade_z must be > 0, got {self.hillshade_z}")
+        if not 0.0 <= self.hillshade_strength <= 1.0:
+            raise ValueError(
+                f"hillshade_strength must be in 0..1, got {self.hillshade_strength}"
+            )
+        if self.dem is not None and self.tiff is not None:
+            raise ValueError(
+                "--dem shades a basemap, while --tiff is already imagery; give "
+                "one or the other, not both"
+            )
 
     @property
     def size_inches(self) -> tuple[float, float]:

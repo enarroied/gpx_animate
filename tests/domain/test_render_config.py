@@ -360,3 +360,56 @@ class TestGifConfig:
 
     def test_the_shipped_default_does_not_enable_it(self):
         assert default_config().gif.enabled is False
+
+
+class TestHillshadeValidation:
+    def test_an_empty_dem_is_rejected(self):
+        with pytest.raises(ValueError, match="dem must be 'auto'"):
+            RenderConfig(dem="   ")
+
+    def test_auto_dem_is_accepted(self):
+        assert RenderConfig(dem="auto").dem == "auto"
+
+    def test_a_local_dem_path_is_accepted(self):
+        assert RenderConfig(dem="/tmp/dem.tif").dem == "/tmp/dem.tif"
+
+    def test_a_bad_azimuth_is_rejected(self):
+        with pytest.raises(ValueError, match="hillshade_azimuth must be in 0..360"):
+            RenderConfig(hillshade_azimuth=400.0)
+
+    def test_a_bad_altitude_is_rejected(self):
+        with pytest.raises(ValueError, match="hillshade_altitude must be in 0..90"):
+            RenderConfig(hillshade_altitude=100.0)
+
+    def test_a_non_positive_z_factor_is_rejected(self):
+        with pytest.raises(ValueError, match="hillshade_z must be > 0"):
+            RenderConfig(hillshade_z=0.0)
+
+    def test_a_strength_outside_the_unit_range_is_rejected(self):
+        with pytest.raises(ValueError, match="hillshade_strength must be in 0..1"):
+            RenderConfig(hillshade_strength=1.5)
+
+    def test_the_edges_of_the_ranges_are_allowed(self):
+        config = RenderConfig(
+            hillshade_azimuth=0.0,
+            hillshade_altitude=0.0,
+            hillshade_z=0.1,
+            hillshade_strength=0.0,
+        )
+        assert config.hillshade_azimuth == 0.0
+
+    def test_dem_and_tiff_together_are_rejected(self):
+        """--tiff is imagery, --dem is elevation; asking for both is ambiguous."""
+        with pytest.raises(ValueError, match="give one or the other"):
+            RenderConfig(tiff=Path("/tmp/map.tif"), dem="auto")
+
+    def test_the_shipped_defaults_have_no_dem(self):
+        """Relief is opt-in; a plain render must not download anything."""
+        assert default_config().dem is None
+
+    def test_the_shipped_defaults_are_true_relief(self):
+        config = default_config()
+        assert config.hillshade_azimuth == 315.0
+        assert config.hillshade_altitude == 45.0
+        assert config.hillshade_z == 1.0
+        assert config.hillshade_strength == 1.0

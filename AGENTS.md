@@ -6,16 +6,18 @@ which diverges from the spec in ways that matter.
 
 ## Current state
 
-SPECS M0–M8 are done. The code is the hexagonal package the spec describes, it is
+SPECS M0–M9 are done. The code is the hexagonal package the spec describes, it is
 installable, it can be configured from files and the environment, and it has
 **two** front ends: a CLI and a PyQt GUI, both permanent.
 
 ```
 src/gpx_animate/
-├── domain/         track.py (Point, Track, haversine), style.py, render_config.py, bbox.py (Bbox)
+├── domain/         track.py (Point, Track, haversine), style.py, render_config.py, bbox.py (Bbox),
+│                   hillshade.py (pure shade/blend)
 ├── application/    ports.py (Protocols), errors.py, use_cases/{load_track,render_animation,export_video}.py
-├── adapters/       basemaps/{tiles,none,tiff,factory}.py, renderers/matplotlib_renderer.py,
-│                   encoders/ffmpeg_encoder.py, logos/registry.py, pipeline.py, cli/main.py, gui/main.py
+├── adapters/       basemaps/{tiles,none,tiff,hillshade,factory}.py, elevation/{local,copernicus,reproject}.py,
+│                   renderers/matplotlib_renderer.py, encoders/ffmpeg_encoder.py, logos/registry.py,
+│                   pipeline.py, paths.py, cli/main.py, gui/main.py
 └── config/         defaults.py, layers.py (reading a layer), loader.py (stacking them)
 ```
 
@@ -40,7 +42,7 @@ src/gpx_animate/
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 927 tests: 919 offline plus 8
+  floor in `[tool.coverage.report] fail_under`. 1019 tests: 1010 offline plus 9
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
@@ -145,7 +147,7 @@ there is no publish token to manage.
 | `0.1.0` | first release: the above | ✅ tag `v0.1.0` (2026-10-04); `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.1.1` | chart-video frame leak (`--chart-video` muxed stale frames) | ✅ tag `v0.1.1` (2026-10-05) |
 | `0.2.0` | US-8 PyQt GUI, the second front end | `gpx-animate-gui` launches; headless `pytest-qt` suite; both front ends share one `render_to_video`; the user has driven the window and called it stable |
-| `0.3.0` | M9 hillshade / topographic overlay | US-12 in SPECS is the sketch; not started |
+| `0.3.0` | M9 hillshade / topographic overlay (US-12) | ✅ code + docs landed: `--dem PATH\|auto`, `--hillshade-*`, Copernicus auto-download with XDG cache, `HillshadeBasemap` over any underlay, Terrain tab in the GUI, 1010 offline tests green. Exit criterion still open: a real `--dem auto --style osm` render driven and approved |
 
 There is no PyPI release, so the acceptance check for a tagged version is
 `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx`,
@@ -307,6 +309,38 @@ published release.
   data and paints it through the current colormap (viridis by default), so a
   one-band hillshade rendered yellow-green. The port promises 3 or 4 bands, so a
   band count other than 1/3/4 is now a `TiffNotReadableError`.
+- **`HillshadeBasemap` is a *composition*, not a fourth style.** It wraps the
+  provider that `--style`/`--tiff` resolved and multiplies the live shade over
+  it, carrying the underlay's `attribution` (line 216 of
+  `adapters/basemaps/hillshade.py`) — the OSM credit has to survive, so a
+  composed basemap that dropped it would be a licence problem, not a cosmetic
+  one. `--tiff` and `--dem` are rejected together in `RenderConfig.__post_init__`:
+  one is imagery, the other is elevation, and an arbitrary winner would be a
+  silent wrong answer. `build_elevation` is the only place that decides
+  `auto` → `CopernicusDem` vs a path → `LocalDem`.
+- **Shading happens in EPSG:3857 and the flattening is left to `--hillshade-z`,
+  on purpose.** Web Mercator inflates ground distance by `1/cos(latitude)`, so
+  relief reads ~30 % flatter near lat 43 than a local projection would give.
+  An automatic `sec(lat)` correction was considered and rejected: it would make
+  `--hillshade-z` mean different things at different latitudes, and the knob is
+  the honest place for it. Don't "fix" this by multiplying the grid by `sec(lat)`
+  in `shade` — the docstring in `_shade_onto` states the limitation, and
+  README §4 documents the compensation. `shade` itself stays pure arithmetic on
+  a grid whose pixel sizes are whatever the caller measured.
+- **`BlankBasemap` returns a 2×2 image, so `HillshadeBasemap` has a placeholder
+  path.** An underlay with a dimension below `MIN_GRID_DIMENSION = 64` is
+  treated as a stand-in: the shade is built on a `STANDALONE_LONG_SIDE = 1024`
+  grid from the bbox over a white base, which is what makes `--style none --dem`
+  a grey hillshade rather than a 2×2 smear. A real underlay goes through
+  `warp_covering`/`read_covering` instead.
+- **Copernicus tile naming uses floor division, and the hemisphere letter
+  carries the sign.** `N/S` + `abs(lat // 1)` zero-padded to 2, `E/W` +
+  `abs(lon // 1)` zero-padded to 3; `-1.2` floors to `-2`, so the tile is `S02`
+  not `S01`. `tiles_for_bbox` iterates `floor(min)..floor(max)` per axis, which
+  is why a view straddling a degree line mosaics two tiles
+  (`rasterio.merge.merge`) instead of failing. `cache_dir()` is XDG-aware and
+  checks `os.environ.get("XDG_CACHE_HOME")` for *falsy* (None **or** empty), not
+  for `Path("")` — an empty string is a truthy `Path`.
 - `Bbox` is `(min_x, min_y, max_x, max_y)` but `BasemapImage.extent` is
   matplotlib's `(min_x, max_x, min_y, max_y)`. The mix-up is silent — both are
   four floats — so the conversion is pinned by tests. Rasterio `array_bounds`
@@ -397,8 +431,10 @@ published release.
   field writes back what it was seeded from. That is why there is no dirty
   tracking. Two traps it exists to absorb: `dataclasses.replace` does **not**
   coerce, so `tiff`/`out`/`output_dir` must be handed over as `Path` and not the
-  line edit's `str`; and a spinbox cannot hold `None`, so `logo_size_px == 0` is
-  the sentinel for "registry default". A test round-trips all 23 fields.
+  line edit's `str` (`dem` is the exception: it is a `str`, either `"auto"` or a
+  path, so `_text` is right for it); and a spinbox cannot hold `None`, so
+  `logo_size_px == 0` is the sentinel for "registry default". A test round-trips
+  all 28 fields.
 - Progress is an **indeterminate** spinner, deliberately. Frame counts are known
   up front, so the `FrameRenderer` port *could* report progress, but widening a
   port for one front end's benefit is the wrong trade. It is on the roadmap.
@@ -440,6 +476,12 @@ published release.
   in the test tree. The package itself is installed by `uv sync`, so there is no
   `pythonpath = ["."]` any more — and a stray top-level `gpx_animate.py` would
   shadow the installed package, which is why the monolith had to be deleted.
+- Because there are no `__init__.py` files, **test module basenames must be
+  unique across the whole `tests/` tree** — the roots are added to `sys.path`,
+  so a second `test_hillshade.py` in another directory shadows the first. That
+  is why the adapter's suite is `tests/adapters/basemaps/test_hillshade_basemap.py`
+  rather than `test_hillshade.py`. Check with
+  `find tests -name 'test_*.py' | sed 's#.*/##' | sort | uniq -d`.
 - Rendering tests must use a fake basemap (`tests/fakes.py: FakeBasemap`) or
   `BlankBasemap`; a real one makes the suite download tiles. The
   `integration`-marked tests are the only ones that hit the network.
@@ -457,10 +499,11 @@ As of this pass README and SPECS.md agree with the code; the sections below are
 kept as a checklist for the next divergence rather than a live list.
 
 - US-5 (logo registry), US-6 (basemap abstraction), US-7 (boundary control),
-  US-8 (PyQt GUI), US-10 (GIF export) and US-11 (elevation chart) are all
-  implemented — `--logo-start|end|marker` plus `--logo-registry`,
-  `--tiff` / `--style none`, `--bounds`, `gpx-animate-gui`, `--gif`, and
-  `--profile` / `--chart-video`. SPECS US-9 (agent-readiness) is this file.
+  US-8 (PyQt GUI), US-10 (GIF export), US-11 (elevation chart) and US-12
+  (hillshade) are all implemented — `--logo-start|end|marker` plus
+  `--logo-registry`, `--tiff` / `--style none`, `--bounds`, `gpx-animate-gui`,
+  `--gif`, `--profile` / `--chart-video`, and `--dem` / `--hillshade-*`.
+  SPECS US-9 (agent-readiness) is this file.
 
 ## Conventions (SPECS §6 — binding)
 

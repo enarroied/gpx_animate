@@ -270,6 +270,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         tabs.addTab(self._source_tab(), "Source")
         tabs.addTab(self._map_tab(), "Map")
+        tabs.addTab(self._terrain_tab(), "Terrain")
         tabs.addTab(self._timing_tab(), "Timing")
         tabs.addTab(self._look_tab(), "Look")
         tabs.addTab(self._logo_tab(), "Logos")
@@ -380,6 +381,58 @@ class MainWindow(QMainWindow):
             ("Fixed bounds", self.bounds_edit),
         ):
             body.addLayout(self._form(label, widget))
+        body.addStretch()
+        return self._tab(body)
+
+    def _terrain_tab(self) -> QWidget:
+        """Relief shading from a DEM, laid over whatever the Map tab picked.
+
+        The DEM is opt-in, so the tab starts blank. ``auto`` downloads and
+        caches Copernicus tiles; anything else is treated as a path.
+        """
+        self.dem_edit = QLineEdit(_as_text(self._base.dem))
+        self.dem_edit.setPlaceholderText("auto, or a path to a GeoTIFF DEM")
+        dem_browse = QPushButton("Browse...")
+        dem_browse.clicked.connect(
+            lambda: self._pick_into(self.dem_edit, "GeoTIFF (*.tif *.tiff)")
+        )
+        dem_row = QHBoxLayout()
+        dem_row.addWidget(self.dem_edit)
+        dem_row.addWidget(dem_browse)
+
+        self.hillshade_azimuth_spin = QDoubleSpinBox()
+        self.hillshade_azimuth_spin.setRange(0.0, 360.0)
+        self.hillshade_azimuth_spin.setValue(self._base.hillshade_azimuth)
+
+        self.hillshade_altitude_spin = QDoubleSpinBox()
+        self.hillshade_altitude_spin.setRange(0.0, 90.0)
+        self.hillshade_altitude_spin.setValue(self._base.hillshade_altitude)
+
+        self.hillshade_z_spin = QDoubleSpinBox()
+        self.hillshade_z_spin.setRange(0.1, 50.0)
+        self.hillshade_z_spin.setSingleStep(0.5)
+        self.hillshade_z_spin.setValue(self._base.hillshade_z)
+
+        self.hillshade_strength_spin = QDoubleSpinBox()
+        self.hillshade_strength_spin.setRange(0.0, 1.0)
+        self.hillshade_strength_spin.setSingleStep(0.1)
+        self.hillshade_strength_spin.setValue(self._base.hillshade_strength)
+
+        body = QVBoxLayout()
+        for label, widget in (
+            ("DEM", dem_row),
+            ("Light azimuth", self.hillshade_azimuth_spin),
+            ("Light altitude", self.hillshade_altitude_spin),
+            ("Vertical exaggeration", self.hillshade_z_spin),
+            ("Shade strength", self.hillshade_strength_spin),
+        ):
+            body.addLayout(self._form(label, widget))
+        body.addWidget(
+            QLabel(
+                "Leave the DEM blank for a flat basemap. 'auto' downloads "
+                "Copernicus tiles once and caches them."
+            )
+        )
         body.addStretch()
         return self._tab(body)
 
@@ -693,6 +746,11 @@ class MainWindow(QMainWindow):
         return {
             "style": self.style_combo.currentText(),
             "tiff": _optional_path(self.tiff_edit.text()),
+            "dem": _text(self.dem_edit.text()),
+            "hillshade_azimuth": self.hillshade_azimuth_spin.value(),
+            "hillshade_altitude": self.hillshade_altitude_spin.value(),
+            "hillshade_z": self.hillshade_z_spin.value(),
+            "hillshade_strength": self.hillshade_strength_spin.value(),
             "duration": self.duration_spin.value(),
             "hold": self.hold_spin.value(),
             "fps": self.fps_spin.value(),

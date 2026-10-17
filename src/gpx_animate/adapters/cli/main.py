@@ -62,6 +62,32 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="local GeoTIFF to draw instead of downloaded tiles; wins over --style",
     )
+    parser.add_argument(
+        "--dem",
+        type=str,
+        help="elevation model for relief shading: 'auto' (download Copernicus) "
+        "or a path to a local GeoTIFF",
+    )
+    parser.add_argument(
+        "--hillshade-azimuth",
+        type=float,
+        help="light direction in degrees clockwise from north (default 315)",
+    )
+    parser.add_argument(
+        "--hillshade-altitude",
+        type=float,
+        help="light elevation above the horizon in degrees (default 45)",
+    )
+    parser.add_argument(
+        "--hillshade-z",
+        type=float,
+        help="vertical exaggeration of the relief; 1.0 is true relief",
+    )
+    parser.add_argument(
+        "--hillshade-strength",
+        type=float,
+        help="how strongly the relief shades the basemap, 0..1",
+    )
     parser.add_argument("--duration", type=float, help="drawing duration in seconds")
     parser.add_argument("--hold", type=float, help="hold time at the end, seconds")
     parser.add_argument("--fps", type=int, help="frames per second")

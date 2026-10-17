@@ -150,8 +150,9 @@ uv sync --extra gui
 uv run gpx-animate-gui
 ```
 
-Nine tabs — Source, Map, Timing, Look, Logos, Output, GIF, Chart, Log — covering
-every setting the CLI has. The widgets are seeded from the same config files and
+Ten tabs — Source, Map, Terrain, Timing, Look, Logos, Output, GIF, Chart, Log —
+covering every setting the CLI has, including the DEM and its four hillshade
+knobs in the Terrain tab. The widgets are seeded from the same config files and
 `GPX_ANIMATE_*` environment variables the CLI reads, so a value set in
 `gpx-animate.toml` shows up pre-filled and behaves the same way. Renders run off
 the GUI thread; the Log tab shows the same lines the CLI prints. When a render
@@ -173,6 +174,11 @@ go.
 | `gpx` | path (positional) | — | Input GPX file |
 | `--style` | enum | `topo` | `osm`, `topo`, `satellite`, plus `positron`/`voyager`/`dark` when `CARTO_API_KEY` is set, or `none` for no map |
 | `--tiff` | path | — | Local GeoTIFF to draw instead of tiles; wins over `--style` |
+| `--dem` | `auto`\|path | — | Elevation model for relief shading: `auto` downloads and caches the public Copernicus GLO-30 tiles for the view, or give a path to a local GeoTIFF. Shaded live and blended over `--style`. Exclusive with `--tiff` |
+| `--hillshade-azimuth` | float | `315.0` | Light direction, degrees clockwise from north |
+| `--hillshade-altitude` | float | `45.0` | Light elevation above the horizon, degrees |
+| `--hillshade-z` | float | `1.0` | Vertical exaggeration of the relief; `1.0` is true relief |
+| `--hillshade-strength` | float | `1.0` | How strongly the relief shades the basemap, `0..1` |
 | `--duration` | float (s) | `5.0` | Length of the drawing phase |
 | `--hold` | float (s) | `1.0` | Pause on the finished trace |
 | `--fps` | int | `30` | Frame rate |
@@ -339,6 +345,45 @@ first. It has to overlap the area being rendered: point `--tiff` at the wrong
 part of the world and you get a clear error rather than a blank frame. It must
 also declare a CRS.
 
+### Relief shading
+
+`--dem` adds relief shading on top of whichever basemap you chose. It is a
+different input from `--tiff`: `--tiff` is *imagery* that is drawn as-is, while
+`--dem` is *elevation values* that the tool shades live and multiplies over the
+map, which is how you get the classic "terrain" look rather than a flat web map.
+
+```bash
+uv run gpx-animate my_trip.gpx --style osm --dem auto
+uv run gpx-animate my_trip.gpx --style none --dem auto     # pure grey hillshade
+uv run gpx-animate my_trip.gpx --dem /path/to/my_dem.tif   # your own elevation
+```
+
+- `--dem auto` fetches the public Copernicus GLO-30 tile(s) covering the view
+  from AWS (no account or key) and caches them under `~/.cache/gpx-animate`,
+  so a second render of the same area is offline. Network is needed the first
+  time, just as with tiles.
+- `--dem PATH` reads a local elevation GeoTIFF. It must overlap the view and
+  declare a CRS; it is reprojected if it is not already in Web Mercator.
+- `--style none --dem …` shades without a map underlay, producing the grey
+  hillshade — the same look as `--tiff` of a pre-built hillshade, but computed
+  from the elevation rather than shipped as an image.
+- `--tiff` and `--dem` are mutually exclusive (imagery vs. elevation); giving
+  both is an error rather than an arbitrary winner.
+
+The four `--hillshade-*` knobs control the light and the blend:
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--hillshade-azimuth` | `315.0` | Light direction, degrees clockwise from north (north-west is the cartographic default) |
+| `--hillshade-altitude` | `45.0` | Light elevation above the horizon; lower is more dramatic |
+| `--hillshade-z` | `1.0` | Vertical exaggeration; `1.0` is true relief, higher values pop the terrain |
+| `--hillshade-strength` | `1.0` | How strongly the shade darkens the map, `0..1` (`0` turns it off) |
+
+**Known limitation.** Shading happens in Web Mercator, whose ground distance is
+inflated by `1/cos(latitude)`, so relief reads about 30 % flatter around
+latitude 43 than a local projection would give. `--hillshade-z` is the intended
+compensation (roughly `1/cos(lat)`), rather than the tool silently guessing.
+
 ---
 
 ## 5. Configuration
@@ -367,6 +412,11 @@ a config file or the environment.
 |---|---|---|---|
 | `style` | str | `topo` | Basemap preset, see `TILE_PROVIDERS`; `none` draws no map |
 | `tiff` | path | *(none)* | Local GeoTIFF to draw instead of tiles; wins over `style` |
+| `dem` | str | *(none)* | Elevation model for relief shading: `auto` or a path to a GeoTIFF |
+| `hillshade_azimuth` | float | `315.0` | Light direction, degrees clockwise from north |
+| `hillshade_altitude` | float | `45.0` | Light elevation above the horizon, degrees |
+| `hillshade_z` | float | `1.0` | Vertical exaggeration of the relief |
+| `hillshade_strength` | float | `1.0` | How strongly the relief shades the basemap, `0..1` |
 | `duration` | float | `5.0` | Drawing phase, seconds |
 | `hold` | float | `1.0` | Hold phase after the trace is finished, seconds |
 | `fps` | int | `30` | Frame rate for both phases |
@@ -505,7 +555,10 @@ this tool's own, so nothing outside it should ever be there.
 - **No audio.** Music must be muxed separately with ffmpeg.
 - **No batch mode.** One GPX per invocation (a shell loop works fine).
 - **Projection is hard-coded to Web Mercator.** Fine for contextily tiles; would
-  need changing for other tile sources.
+  need changing for other tile sources. It also means relief shading (§4) is
+  computed in Web Mercator, whose ground distance is inflated by
+  `1/cos(latitude)`, so terrain reads about 30 % flatter near lat 43;
+  `--hillshade-z` is the intended compensation.
 - **One polyline per file.** Every track and every segment in the GPX is
   concatenated into a single line, so a multi-segment file is not animated as
   separate legs. Waypoints are not read at all.
@@ -537,7 +590,7 @@ they differ — the reason. Where a claim is enforced by a test, the test is nam
 
 | Status | Claim | On the code |
 |---|---|---|
-| PASS | Every `RenderConfig`/`Style` key has a default and a §5 row. | `default_config()` in `config/defaults.py`; §5 walks all 23 fields, including `dpi` and `logo_plate_padding`. |
+| PASS | Every `RenderConfig`/`Style` key has a default and a §5 row. | `default_config()` in `config/defaults.py`; §5 walks all 28 fields, including `dpi`, `logo_plate_padding` and the `dem`/`hillshade_*` group. |
 | PASS | Every config key is overridable by a CLI flag where a flag exists. | `config_from_args` derives overrides from the argparse dests, so a new flag is wired by construction. The converse is deliberate: `output_dir`, `dpi`, `logo_size_px` and every `appearance.*` key have no flag and are set in files/environment. |
 | DEVIATION | `STYLES` is exactly `positron`, `voyager`, `dark`, `osm`, `topo`, `satellite`. | There is no `STYLES` constant. `style_choices()` returns `osm`, `topo`, `satellite`, `none`; `positron`/`voyager`/`dark` appear only when `CARTO_API_KEY` is set (built at import in `adapters/basemaps/tiles.py`), and `none` renders no map. The spec assumed a fixed set; the provider list is runtime data. |
 | PASS | `SIZES` is exactly `16:9`, `1:1`, `9:16`. | `SIZE_PRESETS` in `domain/render_config.py`; any other size is rejected at construction. |

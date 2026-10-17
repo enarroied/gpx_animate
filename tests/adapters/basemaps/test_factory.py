@@ -1,19 +1,52 @@
 """Which provider a config asks for: one line of precedence, one place."""
 
 import dataclasses
+from pathlib import Path
 
+import numpy as np
 import pytest
+import rasterio
+from rasterio.transform import from_bounds
 
 from gpx_animate.adapters.basemaps.factory import NONE_STYLE
 from gpx_animate.adapters.basemaps.factory import build_basemap
+from gpx_animate.adapters.basemaps.factory import build_elevation
 from gpx_animate.adapters.basemaps.factory import style_choices
+from gpx_animate.adapters.basemaps.hillshade import HillshadeBasemap
 from gpx_animate.adapters.basemaps.none import BlankBasemap
 from gpx_animate.adapters.basemaps.tiles import TileBasemap
 from gpx_animate.adapters.basemaps.tiles import available_styles
+from gpx_animate.adapters.elevation.copernicus import CopernicusDem
+from gpx_animate.adapters.elevation.local import LocalDem
 from gpx_animate.application.errors import BasemapError
+from gpx_animate.application.errors import DemNotReadableError
 from gpx_animate.application.errors import TiffNotReadableError
 from gpx_animate.domain.render_config import DEFAULT_STYLE
 from gpx_animate.domain.render_config import RenderConfig
+
+
+def _write_dem(path: Path) -> Path:
+    """Write a tiny single-band GeoTIFF so LocalDem can open it.
+
+    Args:
+        path: Where to write.
+
+    Returns:
+        The path written.
+    """
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=2,
+        width=2,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_bounds(0.0, 0.0, 1.0, 1.0, width=2, height=2),
+    ) as dst:
+        dst.write(np.zeros((2, 2), dtype="float32"), 1)
+    return path
 
 
 class TestStyleChoices:
@@ -65,3 +98,56 @@ class TestBuildBasemap:
         """A config file can name a style argparse would have rejected."""
         with pytest.raises(BasemapError, match="unknown basemap style 'nope'"):
             build_basemap(RenderConfig(style="nope"))
+
+
+class TestBuildElevation:
+    def test_auto_builds_the_copernicus_provider(self):
+        assert isinstance(build_elevation("auto"), CopernicusDem)
+
+    def test_a_path_builds_the_local_provider(self, tmp_path):
+        path = tmp_path / "dem.tif"
+        _write_dem(path)
+        assert isinstance(build_elevation(str(path)), LocalDem)
+
+    def test_a_missing_local_path_is_rejected(self, tmp_path):
+        with pytest.raises(DemNotReadableError, match="does not exist"):
+            build_elevation(str(tmp_path / "nope.tif"))
+
+
+class TestTheDemComposition:
+    def test_a_dem_wraps_the_underlay_in_a_hillshade(self):
+        config = RenderConfig(style="none", dem="auto")
+        provider = build_basemap(config)
+        assert isinstance(provider, HillshadeBasemap)
+        assert isinstance(provider.underlay, BlankBasemap)
+        assert isinstance(provider.elevation, CopernicusDem)
+
+    def test_a_dem_over_a_tile_style_wraps_the_tiles(self):
+        config = RenderConfig(style="osm", dem="auto")
+        provider = build_basemap(config)
+        assert isinstance(provider, HillshadeBasemap)
+        assert isinstance(provider.underlay, TileBasemap)
+
+    def test_no_dem_leaves_the_underlay_alone(self):
+        assert isinstance(build_basemap(RenderConfig(style="osm")), TileBasemap)
+
+    def test_the_hillshade_knobs_reach_the_provider(self):
+        config = RenderConfig(
+            style="none",
+            dem="auto",
+            hillshade_azimuth=90.0,
+            hillshade_altitude=30.0,
+            hillshade_z=2.0,
+            hillshade_strength=0.5,
+        )
+        provider = build_basemap(config)
+        assert isinstance(provider, HillshadeBasemap)
+        assert provider.azimuth == 90.0
+        assert provider.altitude == 30.0
+        assert provider.z_factor == 2.0
+        assert provider.strength == 0.5
+
+    def test_dem_and_tiff_together_never_reach_the_factory(self, tmp_path):
+        """The config rejects the combination before the factory is asked."""
+        with pytest.raises(ValueError, match="one or the other"):
+            RenderConfig(tiff=tmp_path / "map.tif", dem="auto")

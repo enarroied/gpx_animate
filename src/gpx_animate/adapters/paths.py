@@ -23,6 +23,7 @@ for output would move every CLI render out from under its caller.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -57,6 +58,22 @@ def output_dir_base() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path.cwd()
+
+
+def cache_dir() -> Path:
+    """Directory for data the program downloads and reuses.
+
+    DEM tiles for ``--dem auto`` land here. Following the XDG convention means
+    a second render does not re-download the same 40 MB tile, and ``rm -rf`` on
+    this directory is a safe way to reclaim the space.
+
+    Returns:
+        ``$XDG_CACHE_HOME/gpx-animate`` when set, otherwise
+        ``~/.cache/gpx-animate``.
+    """
+    configured = os.environ.get("XDG_CACHE_HOME")
+    base = Path(configured) if configured else (Path.home() / ".cache")
+    return base / "gpx-animate"
 
 
 def resolve_output_dir(output_dir: Path) -> Path:

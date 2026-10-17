@@ -32,6 +32,22 @@ class TiffOutsideViewError(BasemapError):
     """A ``--tiff`` basemap does not overlap the area being rendered."""
 
 
+class DemError(GpxAnimateError, ValueError):
+    """The requested elevation model cannot be supplied."""
+
+
+class DemNotReadableError(DemError):
+    """A ``--dem`` file could not be opened, or held no usable elevations."""
+
+
+class DemOutsideViewError(DemError):
+    """A ``--dem`` file does not overlap the area being rendered."""
+
+
+class DemDownloadError(DemError):
+    """A DEM tile for ``--dem auto`` could not be fetched from its source."""
+
+
 class UnknownLogoError(GpxAnimateError, ValueError):
     """A ``--logo-*`` source matched neither a file on disk nor a registry name."""
 

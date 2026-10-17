@@ -86,6 +86,12 @@ class TestCoercion:
             ("style", "osm", "osm"),
             ("bounds", "2.35,48.85,2.40,48.90", Bbox(2.35, 48.85, 2.40, 48.90)),
             ("bounds", Bbox(1.0, 2.0, 3.0, 4.0), Bbox(1.0, 2.0, 3.0, 4.0)),
+            ("dem", "auto", "auto"),
+            ("dem", "terrain.tif", "terrain.tif"),
+            ("hillshade_azimuth", "90", 90.0),
+            ("hillshade_altitude", "30", 30.0),
+            ("hillshade_z", "2.5", 2.5),
+            ("hillshade_strength", "0.4", 0.4),
         ],
     )
     def test_each_type_is_converted(self, key, raw, expected):
@@ -209,6 +215,32 @@ class TestTiff:
 
     def test_style_none_survives_the_file(self, tmp_path):
         assert load(tmp_path, project_toml='style = "none"').style == "none"
+
+
+class TestDem:
+    """The DEM key has to be settable in every layer like any other (M9)."""
+
+    def test_auto_comes_from_a_project_file(self, tmp_path):
+        config = load(tmp_path, project_toml='dem = "auto"')
+        assert config.dem == "auto"
+
+    def test_a_path_comes_from_the_environment(self, tmp_path):
+        config = load(tmp_path, environ={"GPX_ANIMATE_DEM": "dem.tif"})
+        assert config.dem == "dem.tif"
+
+    def test_it_defaults_to_unset(self, tmp_path):
+        assert load(tmp_path).dem is None
+
+    def test_the_hillshade_knobs_are_coerced_to_floats(self, tmp_path):
+        config = load(
+            tmp_path,
+            environ={"GPX_ANIMATE_HILLSHADE_AZIMUTH": "90"},
+        )
+        assert config.hillshade_azimuth == 90.0
+
+    def test_dem_and_tiff_together_are_rejected_by_the_file(self, tmp_path):
+        with raises(ValueError, match="one or the other"):
+            load(tmp_path, project_toml='dem = "auto"\ntiff = "map.tif"')
 
 
 class TestReadsTheRealEnvironment:

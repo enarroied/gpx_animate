@@ -152,6 +152,17 @@ class TestReadEnvLayer:
                 "#000000",
                 {"appearance.bg_color": "#000000"},
             ),
+            ("GPX_ANIMATE_DEM", "auto", {"dem": "auto"}),
+            (
+                "GPX_ANIMATE_HILLSHADE_AZIMUTH",
+                "90",
+                {"hillshade_azimuth": "90"},
+            ),
+            (
+                "GPX_ANIMATE_HILLSHADE_STRENGTH",
+                "0.5",
+                {"hillshade_strength": "0.5"},
+            ),
         ],
     )
     def test_maps_a_variable_to_a_dotted_key(self, variable, value, expected):

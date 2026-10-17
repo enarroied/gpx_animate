@@ -96,6 +96,54 @@ class BasemapProvider(Protocol):
         """
 
 
+@dataclass(frozen=True)
+class ElevationRaster:
+    """Ground elevations for an area, in metres.
+
+    The elevation counterpart to :class:`BasemapImage`, and it follows the same
+    two conventions so the two line up without a resize: row 0 is the northern
+    edge, and ``extent`` is matplotlib's ``(min_x, max_x, min_y, max_y)`` order.
+
+    Unlike a basemap it carries no attribution — a DEM is data, not a tile
+    service — and it is single-band, because elevation is one number per cell.
+
+    Args:
+        image: Elevations in metres, ``(rows, cols)``, row 0 northernmost.
+        extent: The covered area as ``(min_x, max_x, min_y, max_y)``.
+        crs: The projection ``extent`` is expressed in.
+        nodata: The value marking a cell with no elevation, if the source uses
+            one. Callers shading the grid should fill or mask it first.
+    """
+
+    image: np.ndarray
+    extent: tuple[float, float, float, float]
+    crs: str
+    nodata: float | None = None
+
+    @property
+    def bbox(self) -> Bbox:
+        """The covered area as a :class:`Bbox`."""
+        min_x, max_x, min_y, max_y = self.extent
+        return Bbox(min_x, min_y, max_x, max_y)
+
+
+@runtime_checkable
+class ElevationProvider(Protocol):
+    """Supplies ground elevations for the area under the track."""
+
+    def get_raster(self, bbox: Bbox, crs: str) -> ElevationRaster:
+        """Fetch elevations covering ``bbox``.
+
+        Args:
+            bbox: The area to cover, in ``crs`` units.
+            crs: Target projection, e.g. ``EPSG:3857``. A provider that cannot
+                reproject says so rather than returning a wrongly-placed raster.
+
+        Returns:
+            The elevation grid and the extent it actually covers.
+        """
+
+
 @runtime_checkable
 class FrameRenderer(Protocol):
     """Turns a track into image frames on disk."""

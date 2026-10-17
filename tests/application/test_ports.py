@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from fakes import FakeBasemap
+from fakes import FakeElevation
 from fakes import FakeEncoder
 from fakes import FakeLogoLoader
 from fakes import FakeRenderer
@@ -15,6 +16,8 @@ from gpx_animate.adapters.logos.registry import PngLogoLoader
 from gpx_animate.adapters.renderers.matplotlib_renderer import MatplotlibRenderer
 from gpx_animate.application.ports import BasemapImage
 from gpx_animate.application.ports import BasemapProvider
+from gpx_animate.application.ports import ElevationProvider
+from gpx_animate.application.ports import ElevationRaster
 from gpx_animate.application.ports import Encoder
 from gpx_animate.application.ports import FrameRenderer
 from gpx_animate.application.ports import LogoLoader
@@ -35,6 +38,9 @@ class TestFakesSatisfyThePorts:
 
     def test_fake_logo_loader_is_a_logo_loader(self):
         assert isinstance(FakeLogoLoader(), LogoLoader)
+
+    def test_fake_elevation_is_an_elevation_provider(self):
+        assert isinstance(FakeElevation(), ElevationProvider)
 
 
 class TestAdaptersSatisfyThePorts:
@@ -60,6 +66,20 @@ class TestBasemapImage:
     def test_attribution_defaults_to_none(self):
         image = BasemapImage(image=np.zeros((2, 2, 3)), extent=(0, 1, 0, 1), crs="x")
         assert image.attribution is None
+
+
+class TestElevationRaster:
+    def test_bbox_reorders_extent_into_west_south_east_north(self):
+        raster = ElevationRaster(
+            image=np.zeros((2, 2)),
+            extent=(-1.0, 1.0, -2.0, 2.0),
+            crs="EPSG:3857",
+        )
+        assert raster.bbox == Bbox(-1.0, -2.0, 1.0, 2.0)
+
+    def test_nodata_defaults_to_none(self):
+        raster = ElevationRaster(image=np.zeros((2, 2)), extent=(0, 1, 0, 1), crs="x")
+        assert raster.nodata is None
 
 
 class TestFramesAreSequential:
