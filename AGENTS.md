@@ -145,7 +145,7 @@ there is no publish token to manage.
 | `0.1.0` | first release: the above | ✅ tag `v0.1.0` (2026-10-04); `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.1.1` | chart-video frame leak (`--chart-video` muxed stale frames) | ✅ tag `v0.1.1` (2026-10-05) |
 | `0.2.0` | US-8 PyQt GUI, the second front end | `gpx-animate-gui` launches; headless `pytest-qt` suite; both front ends share one `render_to_video`; the user has driven the window and called it stable |
-| `0.3.0` | M9 hillshade / 3D TIFF | separate spec, per SPECS §10 |
+| `0.3.0` | M9 hillshade / topographic overlay | US-12 in SPECS is the sketch; not started |
 
 There is no PyPI release, so the acceptance check for a tagged version is
 `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx`,

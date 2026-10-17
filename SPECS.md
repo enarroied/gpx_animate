@@ -543,6 +543,73 @@ class GifConfig:
   `--profile-width`, the whole-curve-plus-cursor contract, shared-helper identity,
   and both videos landing on the same moment per frame.
 
+### US-12 — Hillshade & topographic overlay (M9, not yet implemented)
+**As a** content creator, **I want** the terrain shaded under — or blended with —
+the map **so that** relief reads at a glance and the track sits in the landscape
+instead of on a flat web map.
+
+This is a **design sketch**: M9 is not scheduled and no hillshade provider exists
+yet. It records the shape the work should take and the traps a manual trial
+already surfaced (see the notes at the end).
+
+**Acceptance criteria (intended):**
+
+- **Two distinct input semantics.** `--tiff PATH` stays as it is: pre-built
+  imagery drawn unchanged. `--dem PATH` means *elevation values, shaded live*;
+  `--dem auto` fetches the DEM tile for the view from a public source
+  (Copernicus GLO-30 — see §12).
+- **New elevation port + adapters.** `ElevationProvider.get_raster(bbox, crs) ->
+  ElevationRaster` (ndarray + extent + crs), where `ElevationRaster` names no
+  rasterio type — the same rule `BasemapImage` follows. `LocalDem` (a path) and
+  `CopernicusDem` (`auto`, cached) implement it.
+- **Shading is pure domain arithmetic** (`domain/hillshade.py`):
+  `shade(elevation, *, pixel_size_x, pixel_size_y, azimuth, altitude, z_factor)
+  -> uint8` in `0..255`. No I/O, so it stays domain-legal, and it is testable on
+  synthetic planes (a flat DEM shades to a constant; a known slope matches the
+  analytic value).
+- **Slopes must be computed in metres, not degrees.** A DEM in EPSG:4326 uses
+  degrees as horizontal units, so shading it directly gives latitude-dependent,
+  wrong slopes. The elevation adapter warps to the frame's metric CRS
+  (EPSG:3857) before shading; the `1/cos(lat)` y-stretch of 3857 is applied to
+  the spacing. Whether a local UTM is worth the extra correctness is open (§12).
+- **Composition, not a fork.** `HillshadeBasemap` is itself a `BasemapProvider`
+  that wraps another provider as the colour underlay and multiplies the shade
+  over it:
+  - `--style none --dem …` → a grey hillshade (what `--tiff` on a pre-built
+    hillshade gives today, but computed live);
+  - `--style topo|osm --dem …` → the topographic overlay: tiles desaturated and
+    lightened, then multiplied by the shade (the usual "terrain" look);
+  - absent `--dem`, nothing changes — this is additive.
+- **A grey hillshade ships as 3-band grey RGB**, because `imshow` paints an
+  `(H, W, 1)` array through the colormap (viridis). That rule already exists in
+  `TiffBasemap`.
+- **Config surface.** `--dem`, `--hillshade-azimuth` (default 315),
+  `--hillshade-altitude` (45), `--hillshade-z` (1.5) and `--hillshade-strength`
+  (blend fraction, default 1.0). Each is a `RenderConfig` field, settable from
+  files and the environment like every other key, and mirrored in the GUI — the
+  field-parity test forces that.
+- **Determinism & cost.** `auto` downloads at render time (network needed, as
+  with tiles) and caches tiles under the XDG cache; a fixed local DEM gives
+  byte-identical output for a fixed view.
+- **Tests.** Domain `shade` on synthetic planes; a fake `ElevationProvider`; the
+  blend over a fake tile image; a local DEM smaller than the view; one
+  `integration`-marked test that `--dem auto` reaches AWS.
+- **Out of scope:** 3D terrain (camera tilt, meshes), DEM mosaicking across
+  tiles, and sampling elevation onto the track points.
+
+**Notes from the manual trial (a pre-built hillshade through `--tiff`):**
+
+- Copernicus GLO-30 is public on S3 (`copernicus-dem-30m`), no key; the flat URL
+  404s because the real key carries a per-tile folder. One 30 m tile is ~42 MB
+  and covers a whole Pyrenean trip.
+- **Crop before reading.** The adapter reads whole files, so the DEM must be
+  cropped to the fitted view plus a small buffer first; a multi-tile DEM would
+  otherwise be a memory failure, not a slow render.
+- **`gdaldem -combined` is a trap on GDAL 3.8.** It produces a 1-band grey, and a
+  washed-out one (mean ~231/255); `-multidirectional` or a plain directional
+  shade reads far better. The tool shades in numpy, so this is only a reminder
+  that "combined" is not what its name suggests here.
+
 ---
 
 ## 8. Data model (domain, minimal)
@@ -618,6 +685,13 @@ gpx-animate <gpx> [OPTIONS]
 Options:
   --style TEXT              Built-in style name [positron|osm|topo|...|none]
   --tiff PATH               Local GeoTIFF as basemap (overrides --style)
+  --dem PATH|auto           Elevation GeoTIFF, or 'auto' to fetch a public DEM
+                            (Copernicus GLO-30, US-12, M9); shaded and blended
+                            over --style. Not implemented yet.
+  --hillshade-azimuth FLOAT Light direction, degrees clockwise from north [default: 315]
+  --hillshade-altitude FLOAT Light elevation angle in degrees [default: 45]
+  --hillshade-z FLOAT       Vertical exaggeration of the terrain [default: 1.5]
+  --hillshade-strength FRAC How strongly the shade darkens the map [0..1; default: 1.0]
   --duration FLOAT          Drawing phase seconds [default: 5.0]
   --hold FLOAT              Hold phase seconds [default: 1.0]
   --fps INTEGER             [default: 30]
@@ -660,7 +734,10 @@ Options:
 8. **M7 — SPECS.md + AGENTS.md polish** (US-9). ✅
 9. **M8 — PyQt GUI** (US-8). ✅ Shipped as a second, equal front end; the CLI is
    unchanged and not deprecated.
-10. **M9 — Hillshade / 3D TIFF** (future, separate spec).
+10. **M9 — Hillshade / topographic overlay** (US-12, separate spec). Not started;
+    the sketch is in US-12, and `--tiff` of a pre-built hillshade stands in
+    meanwhile. Natural subtasks: domain shading → elevation port/adapters →
+    `HillshadeBasemap` composition → CLI/config/GUI fields → docs.
 11. **M10 — GIF export** (US-10). Independent of the other milestones; landed any
     time after M2, since it only needs the `Encoder` port. Shipped after M4 so the
     `none` basemap provider was available for cheap, fast test renders. ✅
@@ -688,10 +765,12 @@ Remaining items, with the current leaning — none is scheduled work yet.
 
 - **Batch rendering.** Should the GUI support batch rendering (folder of GPX →
   folder of MP4)? Wanted for the future; a shell loop already covers the CLI.
-- **DEM source for hillshade (M9).** Which DEM do we standardize on — Copernicus
-  GLO-30, SRTM, or IGN? Undecided, and untried: M9 is a separate spec and no
-  hillshade provider exists yet. `--tiff` accepts a pre-built hillshade GeoTIFF
-  today as a stand-in.
+- **DEM source for hillshade (M9).** The US-12 sketch leans on Copernicus GLO-30
+  (`--dem auto`, public S3, no key, EPSG:4326 COG); SRTM/IGN remain alternatives.
+  Open, and to be settled when M9 starts rather than now: shade in EPSG:3857
+  (simple, needs the `1/cos(lat)` y-scale applied) or warp to a local UTM per
+  view (correct slopes, more work). `--tiff` of a pre-built hillshade stands in
+  meanwhile.
 - **Moving logo per-vertex rotation.** Should the marker logo rotate to point
   along the bearing (e.g. a car)? Low priority, and **an option only** — the
   default stays upright.
