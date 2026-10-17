@@ -130,10 +130,31 @@ class TestTheImageItReturns:
         image = TiffBasemap(tiff_path).get_image(VIEW, WEB_MERCATOR, "auto")
         assert image.attribution is None
 
-    def test_a_single_band_raster_still_works(self, tmp_path):
+    def test_a_single_band_raster_becomes_grey_rgb(self, tmp_path):
+        """A one-band raster must not be handed to imshow as scalar data.
+
+        imshow paints an ``(H, W, 1)`` array through the current colormap --
+        viridis by default -- so a hillshade came out yellow-green. Replicating
+        the band keeps it grey.
+        """
         path = write_geotiff(tmp_path / "grey.tif", bands=1)
         image = TiffBasemap(path).get_image(VIEW, WEB_MERCATOR, "auto")
-        assert image.image.shape == (SIZE, SIZE, 1)
+        assert image.image.shape == (SIZE, SIZE, 3)
+        expected = np.arange(SIZE * SIZE, dtype="uint8").reshape(SIZE, SIZE)
+        for channel in range(3):
+            assert np.array_equal(image.image[..., channel], expected)
+
+    def test_a_two_band_raster_is_rejected(self, tmp_path):
+        """The port promises RGB or RGBA; two bands are neither, so fail loudly."""
+        path = write_geotiff(tmp_path / "weird.tif", bands=2)
+        with pytest.raises(TiffNotReadableError, match="has 2 bands"):
+            TiffBasemap(path).get_image(VIEW, WEB_MERCATOR, "auto")
+
+    def test_four_band_raster_passes_through(self, tmp_path):
+        """RGBA is already a colour image; do not touch it."""
+        path = write_geotiff(tmp_path / "rgba.tif", bands=4)
+        image = TiffBasemap(path).get_image(VIEW, WEB_MERCATOR, "auto")
+        assert image.image.shape == (SIZE, SIZE, 4)
 
     def test_ignores_the_zoom(self, tiff_path):
         image = TiffBasemap(tiff_path).get_image(VIEW, WEB_MERCATOR, 3)

@@ -34,6 +34,36 @@ from gpx_animate.domain.bbox import Bbox
 logger = logging.getLogger(__name__)
 
 
+def _as_displayable_bands(bands: np.ndarray, path: Path) -> np.ndarray:
+    """Return bands shaped so matplotlib draws the colours the file means.
+
+    ``imshow`` treats an ``(H, W, 1)`` array as scalar data and paints it through
+    the current colormap -- viridis by default -- so a one-band hillshade came
+    out yellow-green instead of grey. Replicating the band into R, G and B keeps
+    it grey. Three- and four-band rasters already say what they mean and pass
+    through untouched. Anything else is rejected: the port promises RGB or RGBA,
+    and guessing which bands are colour would be worse than failing.
+
+    Args:
+        bands: Pixel data as ``(bands, rows, cols)``.
+        path: The file read, named in the error message.
+
+    Returns:
+        ``bands``, with a single band widened to three.
+
+    Raises:
+        TiffNotReadableError: If the band count is neither 1, 3 nor 4.
+    """
+    count = bands.shape[0]
+    if count == 1:
+        return np.repeat(bands, 3, axis=0)
+    if count in (3, 4):
+        return bands
+    raise TiffNotReadableError(
+        f"{path} has {count} bands; expected 1 (grey), 3 (RGB) or 4 (RGBA)"
+    )
+
+
 class TiffBasemap:
     """A basemap read from a local GeoTIFF.
 
@@ -90,7 +120,7 @@ class TiffBasemap:
                     f"{self.path} declares no CRS, so there is no way to place "
                     f"it; give it one with `gdal_edit -a_srs {crs} {self.path}`"
                 )
-            bands = src.read()
+            bands = _as_displayable_bands(src.read(), self.path)
             source_crs = src.crs
             transform = src.transform
             covered = Bbox(*src.bounds)

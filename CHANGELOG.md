@@ -19,6 +19,13 @@ See AGENTS.md -> Versioning & releases.
 
 ### Fixed
 
+- **A one-band `--tiff` basemap was drawn as a rainbow heatmap, not grey.** The
+  raster was handed to `imshow` as `(rows, cols, 1)`, which matplotlib treats as
+  scalar data and paints through the default colormap (viridis) — so a
+  single-band hillshade came out yellow-green. A one-band raster is now
+  replicated to grey RGB; a band count other than 1, 3 or 4 is rejected with a
+  clear message instead of being guessed at.
+
 - **A track whose shape did not match the frame was drawn stretched, with a
   blurred basemap.** The view was stretched to fill the output frame, so a
   tall/narrow track in the default 16:9 frame came out several times wider than
