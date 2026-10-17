@@ -40,7 +40,7 @@ src/gpx_animate/
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 925 tests: 917 offline plus 8
+  floor in `[tool.coverage.report] fail_under`. 927 tests: 919 offline plus 8
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
@@ -122,7 +122,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 917 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 919 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -211,8 +211,9 @@ published release.
   `--style` offers only `osm|topo|satellite` without that env var. README's
   `positron|voyager|dark` are unavailable locally, and `TILE_PROVIDERS` changes
   cannot be verified without a key.
-- The basemap style default is `topo` (`config/defaults.py`); README §4 claims
-  `positron`. Trust the code.
+- The basemap style default is `topo` (`config/defaults.py`), and README §4/§5
+  agree. Don't "restore" a `positron` default: it is only available with
+  `CARTO_API_KEY` set.
 - **No flag whitelist any more.** The old `for k in (...)` tuple in `main()` that
   silently dropped unlisted flags is gone: `config_from_args` derives overrides
   from the argparse dests, so a new flag in `build_parser` is wired by
@@ -301,7 +302,11 @@ published release.
 - `TiffBasemap` reads the **whole** file into memory and has no window/crop step.
   That was scoped out of US-6; a large raster is a memory cost, not a correctness
   one. It reprojects via `calculate_default_transform` + `reproject` and returns
-  `(rows, cols, bands)`, so a single-band raster is 3-D with a trailing 1.
+  `(rows, cols, bands)`. A single-band raster is **replicated to grey RGB**, not
+  returned as `(rows, cols, 1)`: `imshow` treats an `(H, W, 1)` array as scalar
+  data and paints it through the current colormap (viridis by default), so a
+  one-band hillshade rendered yellow-green. The port promises 3 or 4 bands, so a
+  band count other than 1/3/4 is now a `TiffNotReadableError`.
 - `Bbox` is `(min_x, min_y, max_x, max_y)` but `BasemapImage.extent` is
   matplotlib's `(min_x, max_x, min_y, max_y)`. The mix-up is silent — both are
   four floats — so the conversion is pinned by tests. Rasterio `array_bounds`
@@ -448,10 +453,9 @@ published release.
 
 ## Docs that disagree with the code
 
-- README §7 "Single track only. Only the first track/segment is used" is false:
-  `load_track` flattens **all** tracks and segments into one polyline.
-- README §1 advertises waypoint input; `load_track` reads tracks, then falls back
-  to routes, and never touches `gpx.waypoints`.
+As of this pass README and SPECS.md agree with the code; the sections below are
+kept as a checklist for the next divergence rather than a live list.
+
 - US-5 (logo registry), US-6 (basemap abstraction), US-7 (boundary control),
   US-8 (PyQt GUI), US-10 (GIF export) and US-11 (elevation chart) are all
   implemented — `--logo-start|end|marker` plus `--logo-registry`,

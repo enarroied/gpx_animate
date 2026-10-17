@@ -1,8 +1,5 @@
 # Hooks run in the repo environment (language: system), so `uv run` resolves
 # against .venv. Install once with: uv run pre-commit install
-#
-# Path notes: SPECS 4.2/4.5 say `src tests`, which do not exist until the
-# hexagonal refactor (M2). Until then the hooks target what is actually here.
 repos:
   - repo: local
     hooks:

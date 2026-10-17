@@ -25,7 +25,43 @@ pipeline runs from a single command.
 
 ---
 
-## 2. Pipeline
+## 2. Architecture
+
+Hexagonal (ports and adapters): the domain is pure, the application orchestrates
+it through ports, adapters do all the I/O, and both front ends call the same
+composition root. Nothing above the domain imports matplotlib, requests, PyQt or
+ffmpeg on the domain's behalf.
+
+```
+┌──────────────────────────────────────────────────────┐
+│ Front ends — adapters                                │
+│   cli/main.py    ·    gui/main.py                    │
+└──────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────┐
+│ Composition root — adapters/pipeline.py              │
+│   render_to_video(): both front ends call this,      │
+│   never each other, never a subprocess               │
+└──────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────┐
+│ Application — use cases over ports (Protocols)       │
+│   load_track · render_animation · export_video ·     │
+│   resolve_output                                     │
+└──────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────┐
+│ Domain — pure (no I/O, no frameworks)                │
+│   Track · Point · Style · RenderConfig · Bbox · Logo │
+└──────────────────────────────────────────────────────┘
+
+config/:  defaults → user TOML → project TOML → environment → CLI flags / GUI widgets
+```
+
+### Pipeline
 
 ```
 GPX file
@@ -465,7 +501,6 @@ this tool's own, so nothing outside it should ever be there.
 
 - **No Douglas-Peucker simplification** yet. Very large GPX files (10k+ points)
   render slowly and produce large frames. Planned for v2.
-- **No elevation subplot.** Only the map is animated.
 - **No speed-based coloring.** Single color for the growing line.
 - **No audio.** Music must be muxed separately with ffmpeg.
 - **No batch mode.** One GPX per invocation (a shell loop works fine).

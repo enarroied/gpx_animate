@@ -104,10 +104,12 @@ class RenderConfig:
         fps: Frames per second for both phases.
         size: Key into :data:`SIZE_PRESETS`.
         dpi: Resolution of the rendered frames.
-        margin: Extra padding around the track bounding box, as a fraction.
+        margin: Minimum padding around the track bounding box, as a fraction;
+            the renderer grows the view to the frame's aspect after padding.
         bounds: Optional fixed ``(min_lon, min_lat, max_lon, max_lat)`` window,
-            in degrees. When set it replaces the margin-derived view entirely:
-            the render is framed to show exactly those bounds, nothing more.
+            in degrees. When set it replaces the margin-derived view entirely
+            (the margin is ignored), and is then grown to the frame's aspect
+            ratio like any other view.
         out: Destination file, or ``None`` to let the output resolver decide.
         output_dir: Directory for the generated name when ``out`` is ``None``.
         force: Overwrite an existing ``out`` instead of suffixing it.

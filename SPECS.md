@@ -50,12 +50,12 @@ codebase.
 │        │              │             │              │        │
 │  ┌─────▼──────────────▼─────────────▼──────────────▼─────┐  │
 │  │              Application (use cases)                  │  │
-│  │  RenderAnimation · LoadTrack · ResolveStyle · Export  │  │
+│  │  RenderAnimation · LoadTrack · ResolveOutput · Export │  │
 │  └─────────────────────┬─────────────────────────────────┘  │
 │                        │                                    │
 │  ┌─────────────────────▼─────────────────────────────────┐  │
 │  │                    Domain (pure)                      │  │
-│  │  Track · Point · Frame · Style · RenderConfig         │  │
+│  │  Track · Point · Style · RenderConfig · Bbox · Logo   │  │
 │  │  (no I/O, no matplotlib, no requests)                 │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
@@ -133,10 +133,18 @@ Not yet built, listed here so the target layout is unambiguous: a DEM-based
 line-length = 88
 target-version = "py310"
 src = ["src"]
+# ruff 0.16 also formats Python blocks inside Markdown; this doc is
+# hand-authored, so keep the formatter off it.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E","W","F","I","UP","PTH","B","C4","SIM","RET","PL","N"]
-ignore = ["E501","PLR0913","PLR2004"]
+ignore = ["E501","PLR0913","PLR0917","PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+# Projected X/Y in the renderer; Qt's camelCase overrides in the GUI.
+"src/gpx_animate/adapters/renderers/matplotlib_renderer.py" = ["N806"]
+"src/gpx_animate/adapters/gui/main.py" = ["N802"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
@@ -186,13 +194,13 @@ repos:
         always_run: true
       - id: vulture
         name: vulture
-        entry: uv run vulture src --min-confidence 80
+        entry: uv run vulture src tests --min-confidence 80
         language: system
         pass_filenames: false
         always_run: true
       - id: pytest
         name: pytest
-        entry: uv run pytest
+        entry: uv run pytest -q
         language: system
         pass_filenames: false
         always_run: true
@@ -362,10 +370,21 @@ or no map **so that** I control the look and don't depend on flaky servers.
 percentage margin **so that** I can either frame tightly or show context.
 
 **Acceptance criteria:**
-- `--margin 0.15` (default) — fractional padding around track bbox.
+- `--margin 0.15` (default) — minimum fractional padding around the track bbox.
 - `--bounds min_lon,min_lat,max_lon,max_lat` — overrides margin.
 - Both are part of `RenderConfig`.
-- Tests: bounds parsing, margin math, invalid bounds rejected.
+- **The view is fitted to the output frame's aspect** after the margin is applied
+  (or from `--bounds`, which skips the margin). The shorter axis is grown about
+  the centre so `width / height` equals the frame's, and nothing is ever cropped
+  or shrunk. The axes is left at matplotlib's default `aspect="auto"`, which
+  stretches whatever shape it is handed to fill the frame, so matching the ratios
+  is what stops a tall track being drawn several times too wide in a 16:9 frame —
+  and its basemap being upsampled to match. `Bbox.fit_aspect(aspect)` in
+  `domain/bbox.py` does the growth; it is expand-only and idempotent and is
+  applied to an explicit `--bounds` window too. (Tile-zoom/sharpness is separate
+  and unfixed; this only removes the distortion.)
+- Tests: bounds parsing, margin math, invalid bounds rejected, and the fitted
+  view's aspect matching every size preset for both narrow and wide tracks.
 
 ### US-8 — PyQt GUI
 **As a** user, **I want** a small GUI to pick a GPX, style, colors, logos, and
@@ -426,7 +445,7 @@ class GifConfig:
     enabled: bool = False
     size: str = "800x450"   # px, independent of the SIZES aspect presets
     fps: int = 15            # half the MP4 rate is fine
-    colors: int = 128        # 64 | 128 | 256
+    colors: int = 256        # 64 | 128 | 256
     dither: bool = False     # off = smaller
     loop: int = 0            # 0 = infinite
 ```
@@ -454,7 +473,13 @@ class GifConfig:
   Note that GIF stores frame delays in centiseconds, so 15 fps is written as
   70 ms (~14.3 fps effective); document the rounding rather than fight it.
 - `colors` must be one of 64, 128, 256; anything else is rejected before
-  rendering starts. Quantization is adaptive, per frame.
+  rendering starts. Every frame is quantised against **one shared palette**, built
+  from an evenly-spaced spread of the clip — *not* an adaptive palette per frame.
+  Handing Pillow `palette=ADAPTIVE` on a multi-frame `save()` makes it quantise
+  each frame separately but write only the first frame's table as the GIF's
+  global one, so later frames decode against the wrong colours and a photographic
+  basemap shifts hue mid-clip. Dithering therefore lives on the per-frame
+  `quantize(palette=...)`, never on the `save()`.
 - `dither` off uses `Image.Dither.NONE`; on uses the default dither. Dithering
   costs bytes, so the default is off.
 - `loop = 0` means infinite.
@@ -607,7 +632,7 @@ Options:
   --gif                      Also write a GIF (enables [gif] in config)
   --gif-size WIDTHxHEIGHT   GIF pixel box, independent of --size [default: 800x450]
   --gif-fps INTEGER         GIF frame rate, must be <= fps [default: 15]
-  --gif-colors [64|128|256] GIF palette size [default: 128]
+  --gif-colors [64|128|256] GIF palette size [default: 256]
   --gif-dither / --no-gif-dither   [default: off]
   --gif-loop INTEGER        GIF loop count, 0 = forever [default: 0]
   --profile [off|top|bottom|top-left|top-right|bottom-left|bottom-right]
@@ -659,8 +684,16 @@ Options:
 
 ## 12. Open questions (for you to decide later)
 
-- Do we want a `gpx-animate.toml` project file, or rely purely on CLI + user config?
-- Should the GUI support batch rendering (folder of GPX → folder of MP4)?
-- For hillshade, which DEM source do we standardize on (Copernicus GLO-30, SRTM, IGN)?
-- Should the "moving logo" have per-vertex rotation (e.g. car pointing along bearing)?
-- Do we want a preview still (first + last frame) saved alongside the MP4?
+Remaining items, with the current leaning — none is scheduled work yet.
+
+- **Batch rendering.** Should the GUI support batch rendering (folder of GPX →
+  folder of MP4)? Wanted for the future; a shell loop already covers the CLI.
+- **DEM source for hillshade (M9).** Which DEM do we standardize on — Copernicus
+  GLO-30, SRTM, or IGN? Undecided, and untried: M9 is a separate spec and no
+  hillshade provider exists yet. `--tiff` accepts a pre-built hillshade GeoTIFF
+  today as a stand-in.
+- **Moving logo per-vertex rotation.** Should the marker logo rotate to point
+  along the bearing (e.g. a car)? Low priority, and **an option only** — the
+  default stays upright.
+- **Preview still.** Save the first and last frame alongside the MP4. Wanted, low
+  priority, and cheap; should be **on by default** as an optional feature.
