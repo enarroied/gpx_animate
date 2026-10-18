@@ -70,6 +70,7 @@ GPX file
   ├─ geometry (numpy)            → cumulative distance (haversine), elevation gain
   ├─ project (pyproj)            → EPSG:4326 → EPSG:3857 (Web Mercator)
   ├─ basemap                     → tiles, a GeoTIFF, or a flat colour under the track
+  │     · optionally DEM relief shading multiplied over whatever underlay
   ├─ render (matplotlib)         → one PNG per frame
   │     · faint full track
   │     · bright growing line (LineCollection, updated per frame)
