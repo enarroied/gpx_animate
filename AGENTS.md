@@ -41,8 +41,8 @@ src/gpx_animate/
   equivalent is proofed by hand locally (same spec, same commands).
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
-  implementations) and `tests/fixtures/`. 99% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 1019 tests: 1010 offline plus 9
+  implementations) and `tests/fixtures/`. 98% statement coverage, with a 90%
+  floor in `[tool.coverage.report] fail_under`. 1026 tests: 1017 offline plus 9
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
@@ -124,7 +124,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 919 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 1017 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -147,7 +147,8 @@ there is no publish token to manage.
 | `0.1.0` | first release: the above | ✅ tag `v0.1.0` (2026-10-04); `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx` works; ruff/ty/pytest/pre-commit green; README accurate |
 | `0.1.1` | chart-video frame leak (`--chart-video` muxed stale frames) | ✅ tag `v0.1.1` (2026-10-05) |
 | `0.2.0` | US-8 PyQt GUI, the second front end | `gpx-animate-gui` launches; headless `pytest-qt` suite; both front ends share one `render_to_video`; the user has driven the window and called it stable |
-| `0.3.0` | M9 hillshade / topographic overlay (US-12) | ✅ code + docs landed: `--dem PATH\|auto`, `--hillshade-*`, Copernicus auto-download with XDG cache, `HillshadeBasemap` over any underlay, Terrain tab in the GUI, 1010 offline tests green. Exit criterion still open: a real `--dem auto --style osm` render driven and approved |
+| `0.3.0` | M9 hillshade / topographic overlay (US-12) | ✅ code + docs landed: `--dem PATH\|auto`, `--hillshade-*`, Copernicus auto-download with XDG cache, `HillshadeBasemap` over any underlay, Terrain tab in the GUI, tests green. Exit criterion still open: a real `--dem auto --style osm` render driven and approved |
+| unreleased | black-band fix + relief defaults 35 / 1.4 | `warp_covering` rounds outward and lays the destination over the read, `_shade_onto`'s DEM is asked for the underlay extent, NaN shades as flat ground (`sin(altitude)`), `--hillshade-altitude` 45→35 and `--hillshade-z` 1.0→1.4 with a drift test against `domain/hillshade.py`. Exit criterion: the user approves the new default look from the three comparison renders (A 45/1.4, B 35/1.4, C 45/2.0) |
 
 There is no PyPI release, so the acceptance check for a tagged version is
 `uvx --from git+https://github.com/enarroied/gpx_animate gpx-animate trip.gpx`,
@@ -326,7 +327,43 @@ published release.
   the honest place for it. Don't "fix" this by multiplying the grid by `sec(lat)`
   in `shade` — the docstring in `_shade_onto` states the limitation, and
   README §4 documents the compensation. `shade` itself stays pure arithmetic on
-  a grid whose pixel sizes are whatever the caller measured.
+  a grid whose pixel sizes are whatever the caller measured. What the tool *does*
+  do is lean the other way in the shipped defaults: `hillshade_altitude` 35 (a
+  lower light reads as more relief) and `hillshade_z` 1.4 (~`1/cos(43°)`), in
+  both `domain/hillshade.py` and `RenderConfig`. A test in
+  `tests/domain/test_render_config.py` asserts the two agree, so changing one
+  without the other fails.
+- **A DEM cell with no data must shade as flat ground, never as black.**
+  `uint8(NaN)` is 0, and 0 reads as a hole punched through the map; `shade`
+  therefore replaces a non-finite intensity with `sin(altitude)` — the
+  intensity of zero slope — so a data gap shows as unshaded terrain. This is
+  belt and braces next to the two coverage rules below, not a substitute for
+  them: it stops the *black*, but a missing border would still read as an
+  unshaded seam if the DEM did not actually cover the grid.
+- **`warp_covering` rounds the read *outward*, and lays the destination over
+  what it actually read.** Two independent rounding traps used to leave NaN
+  inside a "covering" raster, which became the black band along the map edge
+  (16 px solid black along the bottom of a 1080p frame): `round_offsets()`
+  rounds to the *nearest* pixel while `calculate_default_transform` was handed
+  the exact requested bounds, so whichever side rounded in had cells outside
+  the read; and `calculate_default_transform` rounds its dimensions up, which
+  can push its transform a sub-pixel past what the source covers. The fix is
+  `floor`/`ceil` (clamped to the array) plus `array_bounds` of the rounded
+  window, then `transform_bounds` + `transform.from_bounds` (imported as
+  `transform_from_bounds`, because `windows.from_bounds` is a different
+  function returning a `Window`) to place the destination over the read's
+  bounds exactly. Don't restore `round_offsets()`/`round_lengths()`, and don't
+  hand `calculate_default_transform`'s transform to `reproject` — use it for
+  the pixel size only.
+- **The DEM is requested for the underlay's extent, not just the view.**
+  `_shade_onto`'s destination grid is the underlay's image, and a tile underlay
+  rounds its extent out to whole tiles, so the grid can be larger than the view.
+  `HillshadeBasemap.get_image` asks for `_covering_bbox(bbox, extent)` — the
+  union — because otherwise the cells between the view and the underlay's edge
+  are outside the DEM, and `np.gradient` reads across that gap into the visible
+  frame's own edge cells (an unshaded hairline all the way round). For a
+  placeholder underlay the union collapses to the bbox, so `--style none --dem`
+  fetches exactly what it used to.
 - **`BlankBasemap` returns a 2×2 image, so `HillshadeBasemap` has a placeholder
   path.** An underlay with a dimension below `MIN_GRID_DIMENSION = 64` is
   treated as a stand-in: the shade is built on a `STANDALONE_LONG_SIDE = 1024`

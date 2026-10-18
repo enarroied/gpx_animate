@@ -63,6 +63,24 @@ def _grid_for(bbox: Bbox) -> tuple[tuple[int, int], tuple[float, float, float, f
     return (rows, cols), bbox.extent
 
 
+def _covering_bbox(bbox: Bbox, extent: tuple[float, float, float, float]) -> Bbox:
+    """The union of a view ``bbox`` and a matplotlib ``extent``.
+
+    Args:
+        bbox: The area the caller asked for, in the target's units.
+        extent: The shade grid's matplotlib ``extent``.
+
+    Returns:
+        A box covering both.
+    """
+    return Bbox(
+        min(bbox.min_x, extent[0]),
+        min(bbox.min_y, extent[2]),
+        max(bbox.max_x, extent[1]),
+        max(bbox.max_y, extent[3]),
+    )
+
+
 def _shade_onto(
     dem: np.ndarray,
     dem_extent: tuple[float, float, float, float],
@@ -195,7 +213,12 @@ class HillshadeBasemap(BasemapProvider):
             grid = (rows, cols)
             extent = underlay.extent
 
-        raster = self.elevation.get_raster(bbox, crs)
+        # The DEM must cover the whole grid, not just the view: a tile underlay
+        # rounds its extent out to whole tiles, and the grid is that extent.
+        # Cells outside the DEM stay at the reproject's NaN nodata, and shade's
+        # gradient then reads across them into the visible frame's own edge
+        # cells -- an unshaded seam along the border.
+        raster = self.elevation.get_raster(_covering_bbox(bbox, extent), crs)
         shade_grid = _shade_onto(
             np.asarray(raster.image, dtype=np.float32),
             raster.extent,

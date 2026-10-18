@@ -76,12 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hillshade-altitude",
         type=float,
-        help="light elevation above the horizon in degrees (default 45)",
+        help="light elevation above the horizon in degrees (default 35)",
     )
     parser.add_argument(
         "--hillshade-z",
         type=float,
-        help="vertical exaggeration of the relief; 1.0 is true relief",
+        help="vertical exaggeration of the relief; 1.0 is true relief (default 1.4)",
     )
     parser.add_argument(
         "--hillshade-strength",

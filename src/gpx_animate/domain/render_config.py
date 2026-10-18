@@ -133,8 +133,13 @@ class RenderConfig:
             either ``"auto"`` (download and cache Copernicus GLO-30 tiles) or a
             path to a local GeoTIFF of elevations in metres.
         hillshade_azimuth: Light direction in degrees clockwise from north.
-        hillshade_altitude: Light elevation above the horizon in degrees.
-        hillshade_z: Vertical exaggeration; ``1.0`` is true relief.
+        hillshade_altitude: Light elevation above the horizon in degrees. The
+            shipped default, 35, is below the textbook 45: a lower light reads
+            as more dramatic relief, matching ``domain.hillshade``'s default.
+        hillshade_z: Vertical exaggeration; ``1.0`` is true relief. The
+            shipped default, 1.4, is roughly the ``1/cos(latitude)`` factor
+            Web Mercator owes at mid latitudes, where the projection computes
+            slopes flatter than they are.
         hillshade_strength: How far toward a full multiply the shade is applied,
             ``0..1``. ``0`` leaves the basemap untouched.
         appearance: Colours and font.
@@ -162,8 +167,8 @@ class RenderConfig:
     tiff: Path | None = None
     dem: str | None = None
     hillshade_azimuth: float = 315.0
-    hillshade_altitude: float = 45.0
-    hillshade_z: float = 1.0
+    hillshade_altitude: float = 35.0
+    hillshade_z: float = 1.4
     hillshade_strength: float = 1.0
     appearance: Style = DEFAULT_STYLE
     gif: GifConfig = GifConfig()

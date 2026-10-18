@@ -8,6 +8,8 @@ import pytest
 
 from gpx_animate.config.defaults import default_config
 from gpx_animate.domain.bbox import Bbox
+from gpx_animate.domain.hillshade import DEFAULT_ALTITUDE
+from gpx_animate.domain.hillshade import DEFAULT_Z_FACTOR
 from gpx_animate.domain.render_config import FULL_WIDTH_PROFILE_POSITIONS
 from gpx_animate.domain.render_config import PROFILE_POSITIONS
 from gpx_animate.domain.render_config import SIZE_PRESETS
@@ -407,9 +409,18 @@ class TestHillshadeValidation:
         """Relief is opt-in; a plain render must not download anything."""
         assert default_config().dem is None
 
-    def test_the_shipped_defaults_are_true_relief(self):
+    def test_the_shipped_defaults_compensate_for_web_mercator(self):
+        """Not the textbook 45/1.0: the projection flattens the relief.
+
+        Web Mercator inflates ground distance, so slopes read flatter than
+        they are at mid latitudes; the shipped light angle and exaggeration
+        put the contrast back. The numbers must match ``domain.hillshade``'s
+        constants, so drift between the two fails here.
+        """
         config = default_config()
         assert config.hillshade_azimuth == 315.0
-        assert config.hillshade_altitude == 45.0
-        assert config.hillshade_z == 1.0
+        assert config.hillshade_altitude == 35.0
+        assert config.hillshade_z == 1.4
         assert config.hillshade_strength == 1.0
+        assert config.hillshade_altitude == DEFAULT_ALTITUDE
+        assert config.hillshade_z == DEFAULT_Z_FACTOR

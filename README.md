@@ -177,8 +177,8 @@ go.
 | `--tiff` | path | — | Local GeoTIFF to draw instead of tiles; wins over `--style` |
 | `--dem` | `auto`\|path | — | Elevation model for relief shading: `auto` downloads and caches the public Copernicus GLO-30 tiles for the view, or give a path to a local GeoTIFF. Shaded live and blended over `--style`. Exclusive with `--tiff` |
 | `--hillshade-azimuth` | float | `315.0` | Light direction, degrees clockwise from north |
-| `--hillshade-altitude` | float | `45.0` | Light elevation above the horizon, degrees |
-| `--hillshade-z` | float | `1.0` | Vertical exaggeration of the relief; `1.0` is true relief |
+| `--hillshade-altitude` | float | `35.0` | Light elevation above the horizon, degrees; lower is more dramatic |
+| `--hillshade-z` | float | `1.4` | Vertical exaggeration of the relief; `1.0` is true relief |
 | `--hillshade-strength` | float | `1.0` | How strongly the relief shades the basemap, `0..1` |
 | `--duration` | float (s) | `5.0` | Length of the drawing phase |
 | `--hold` | float (s) | `1.0` | Pause on the finished trace |
@@ -371,19 +371,35 @@ uv run gpx-animate my_trip.gpx --dem /path/to/my_dem.tif   # your own elevation
 - `--tiff` and `--dem` are mutually exclusive (imagery vs. elevation); giving
   both is an error rather than an arbitrary winner.
 
+- `--style none --dem …` shades without a map underlay, producing the grey
+  hillshade — the same look as `--tiff` of a pre-built hillshade, but computed
+  from the elevation rather than shipped as an image.
+- `--tiff` and `--dem` are mutually exclusive (imagery vs. elevation); giving
+  both is an error rather than an arbitrary winner.
+- Where the DEM has no data — the edge of a tile, a hole in a local file — that
+  area shades as flat ground rather than black, so a gap reads as unshaded
+  terrain, never as a hole punched through the map.
+
 The four `--hillshade-*` knobs control the light and the blend:
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--hillshade-azimuth` | `315.0` | Light direction, degrees clockwise from north (north-west is the cartographic default) |
-| `--hillshade-altitude` | `45.0` | Light elevation above the horizon; lower is more dramatic |
-| `--hillshade-z` | `1.0` | Vertical exaggeration; `1.0` is true relief, higher values pop the terrain |
+| `--hillshade-altitude` | `35.0` | Light elevation above the horizon; lower is more dramatic |
+| `--hillshade-z` | `1.4` | Vertical exaggeration; `1.0` is true relief, higher values pop the terrain |
 | `--hillshade-strength` | `1.0` | How strongly the shade darkens the map, `0..1` (`0` turns it off) |
+
+The shipped `35.0` and `1.4` are not the textbook `45`/`1.0`: Web Mercator (see
+below) computes slopes flatter than they are, and these defaults lean the other
+way to put the contrast back. Drop `--hillshade-z 1.0` for true relief, or teach
+the tool the projection's correction yourself with roughly `1/cos(latitude)`.
 
 **Known limitation.** Shading happens in Web Mercator, whose ground distance is
 inflated by `1/cos(latitude)`, so relief reads about 30 % flatter around
 latitude 43 than a local projection would give. `--hillshade-z` is the intended
-compensation (roughly `1/cos(lat)`), rather than the tool silently guessing.
+compensation (roughly `1/cos(lat)`), and the shipped default of `1.4` is close
+to that factor at mid latitudes — the knob, not a hidden guess, is where the
+correction lives.
 
 ---
 
@@ -415,8 +431,8 @@ a config file or the environment.
 | `tiff` | path | *(none)* | Local GeoTIFF to draw instead of tiles; wins over `style` |
 | `dem` | str | *(none)* | Elevation model for relief shading: `auto` or a path to a GeoTIFF |
 | `hillshade_azimuth` | float | `315.0` | Light direction, degrees clockwise from north |
-| `hillshade_altitude` | float | `45.0` | Light elevation above the horizon, degrees |
-| `hillshade_z` | float | `1.0` | Vertical exaggeration of the relief |
+| `hillshade_altitude` | float | `35.0` | Light elevation above the horizon, degrees |
+| `hillshade_z` | float | `1.4` | Vertical exaggeration of the relief |
 | `hillshade_strength` | float | `1.0` | How strongly the relief shades the basemap, `0..1` |
 | `duration` | float | `5.0` | Drawing phase, seconds |
 | `hold` | float | `1.0` | Hold phase after the trace is finished, seconds |
@@ -559,7 +575,8 @@ this tool's own, so nothing outside it should ever be there.
   need changing for other tile sources. It also means relief shading (§4) is
   computed in Web Mercator, whose ground distance is inflated by
   `1/cos(latitude)`, so terrain reads about 30 % flatter near lat 43;
-  `--hillshade-z` is the intended compensation.
+  `--hillshade-z` is the intended compensation, and the shipped default of
+  `1.4` is close to that factor.
 - **One polyline per file.** Every track and every segment in the GPX is
   concatenated into a single line, so a multi-segment file is not animated as
   separate legs. Waypoints are not read at all.

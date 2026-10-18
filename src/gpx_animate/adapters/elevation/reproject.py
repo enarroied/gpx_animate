@@ -13,6 +13,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import Affine
 from rasterio.transform import array_bounds
+from rasterio.transform import from_bounds as transform_from_bounds
 from rasterio.warp import Resampling
 from rasterio.warp import calculate_default_transform
 from rasterio.warp import reproject
@@ -80,25 +81,50 @@ def warp_covering(
             f"area being rendered ({bbox})"
         )
 
+    # Round the read *outward* -- floor the start, ceil the end, clamped to
+    # the array. Nearest-pixel rounding cuts the footprint on whichever side
+    # rounds in, while the destination below is still laid out over the exact
+    # requested bounds: every cell the read missed stays at dst_nodata, an
+    # untouched NaN border that shades to a black band along the map edge.
     window = from_bounds(left, bottom, right, top, transform=source_transform)
-    window = window.round_offsets().round_lengths()
-    width = int(window.width)
-    height = int(window.height)
+    col_off = max(int(np.floor(window.col_off)), 0)
+    row_off = max(int(np.floor(window.row_off)), 0)
+    col_end = min(int(np.ceil(window.col_off + window.width)), band.shape[1])
+    row_end = min(int(np.ceil(window.row_off + window.height)), band.shape[0])
+    width = col_end - col_off
+    height = row_end - row_off
     if width < 1 or height < 1:
         raise DemOutsideViewError(
             f"{label} has no elevation pixels inside the area being rendered"
         )
 
-    clipped = band[
-        int(window.row_off) : int(window.row_off) + height,
-        int(window.col_off) : int(window.col_off) + width,
-    ].astype(np.float32)
-    window_transform = source_transform * Affine.translation(
-        window.col_off, window.row_off
+    clipped = band[row_off:row_end, col_off:col_end].astype(np.float32)
+    window_transform = source_transform @ Affine.translation(col_off, row_off)
+    read_west, read_south, read_east, read_north = array_bounds(
+        height, width, window_transform
     )
 
-    dest_transform, dest_width, dest_height = calculate_default_transform(
-        source_crs, dst_crs, width, height, left, bottom, right, top
+    # calculate_default_transform only for the destination's pixel size: its
+    # own transform rounds up to whole pixels and can reach a sub-pixel past
+    # what the source covers, which would leave a NaN sliver along that edge.
+    # Placing the destination over the read's own bounds (in the target CRS)
+    # keeps source footprint and destination footprint the same rectangle, so
+    # every destination cell has source pixels behind it.
+    _, dest_width, dest_height = calculate_default_transform(
+        source_crs,
+        dst_crs,
+        width,
+        height,
+        read_west,
+        read_south,
+        read_east,
+        read_north,
+    )
+    dest_bounds = transform_bounds(
+        source_crs, dst_crs, read_west, read_south, read_east, read_north
+    )
+    dest_transform = transform_from_bounds(
+        *dest_bounds, width=dest_width, height=dest_height
     )
     destination = np.full((dest_height, dest_width), np.nan, dtype=np.float32)
     reproject(

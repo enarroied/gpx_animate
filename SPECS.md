@@ -563,7 +563,10 @@ instead of on a flat web map.
   (a path) and `CopernicusDem` (`auto`, cached) implement it.
 - **Shading is pure domain arithmetic** (`domain/hillshade.py`):
   `shade(elevation, *, pixel_size_x, pixel_size_y, azimuth, altitude, z_factor)
-  -> uint8` in `1..255`, plus `blend(base_rgb, shade, *, strength)`. No I/O, so
+  -> uint8` in `1..255`, plus `blend(base_rgb, shade, *, strength)`. Cells the
+  DEM never covered (`NaN`) shade as flat ground, never as `0`: `uint8(NaN)` is
+  black, which would punch a hole through the basemap wherever the data stops,
+  while flat ground is what an uncovered cell would have looked like. No I/O, so
   it stays domain-legal, and it is tested on synthetic planes (a flat DEM shades
   to a constant; a 45-degree slope facing west under a western light matches the
   analytic value exactly).
@@ -584,10 +587,13 @@ instead of on a flat web map.
   `(H, W, 1)` array through the colormap (viridis). That rule already exists in
   `TiffBasemap`.
 - **Config surface.** `--dem`, `--hillshade-azimuth` (default 315),
-  `--hillshade-altitude` (45), `--hillshade-z` (1.0, true relief) and
-  `--hillshade-strength` (blend fraction, default 1.0). Each is a `RenderConfig`
-  field, settable from files and the environment like every other key, and
-  mirrored in the GUI's Terrain tab — the field-parity test forces that.
+  `--hillshade-altitude` (35, below the textbook 45: a lower light rakes the
+  slopes and reads as more dramatic relief), `--hillshade-z` (1.4, close to the
+  `1/cos(latitude)` factor Web Mercator owes at mid latitudes; 1.0 is true
+  relief) and `--hillshade-strength` (blend fraction, default 1.0). Each is a
+  `RenderConfig` field, settable from files and the environment like every
+  other key, and mirrored in the GUI's Terrain tab — the field-parity test
+  forces that.
 - **Determinism & cost.** `auto` downloads at render time (network needed, as
   with tiles) and caches tiles under the XDG cache; a fixed local DEM gives
   byte-identical output for a fixed view.
@@ -689,8 +695,9 @@ Options:
                             public DEM (Copernicus GLO-30, US-12/M9); shaded
                             live and blended over --style. Exclusive with --tiff.
   --hillshade-azimuth FLOAT Light direction, degrees clockwise from north [default: 315]
-  --hillshade-altitude FLOAT Light elevation angle in degrees [default: 45]
+  --hillshade-altitude FLOAT Light elevation angle in degrees [default: 35]
   --hillshade-z FLOAT       Vertical exaggeration of the relief; 1.0 is true relief
+                            [default: 1.4]
   --hillshade-strength FRAC How strongly the shade darkens the map [0..1; default: 1.0]
   --duration FLOAT          Drawing phase seconds [default: 5.0]
   --hold FLOAT              Hold phase seconds [default: 1.0]
@@ -771,7 +778,8 @@ Remaining items, with the current leaning — none is scheduled work yet.
   SRTM/IGN remain alternatives if ever needed. Shading happens in **EPSG:3857**
   — simple, and the `1/cos(lat)` y-stretch is left to `--hillshade-z` rather
   than a per-view UTM warp. Known consequence: relief reads ~30 % flatter near
-  lat 43; users compensate with `--hillshade-z`. A local UTM was considered and
+  lat 43; the shipped `--hillshade-z` default of 1.4 is the compensation, and
+  the knob stays the place to dial it. A local UTM was considered and
   rejected as extra machinery for one frame's worth of correctness.
 - **Moving logo per-vertex rotation.** Should the marker logo rotate to point
   along the bearing (e.g. a car)? Low priority, and **an option only** — the

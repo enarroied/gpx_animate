@@ -82,3 +82,53 @@ class TestWithNoPictureUnderlay:
         image = basemap.get_image(VIEW, CRS, "auto")
         height, width = image.image.shape[:2]
         assert width > height
+
+
+class TestCoverageRules:
+    def test_the_dem_is_asked_for_the_whole_underlay_extent(self):
+        """Tiles round the grid out past the view, so the DEM must cover it.
+
+        The gradient in shade reads one cell across the grid's edge; if the
+        DEM stops at the view, the visible frame's own edge cells shade
+        against missing data and come out unshaded along the border.
+        """
+        extent = (
+            VIEW.min_x - 300.0,
+            VIEW.max_x + 300.0,
+            VIEW.min_y - 200.0,
+            VIEW.max_y + 200.0,
+        )
+        underlay = FakeBasemap(
+            image=np.full((64, 64, 3), 200, dtype=np.uint8), extent=extent
+        )
+        elevation = FakeElevation(image=np.full((8, 8), 500.0))
+        basemap = HillshadeBasemap(underlay, elevation, **SHADE_PARAMS)
+        basemap.get_image(VIEW, CRS, "auto")
+        assert elevation.calls[0]["bbox"] == Bbox(
+            extent[0], extent[2], extent[1], extent[3]
+        )
+
+    def test_the_placeholder_underlay_asks_for_the_view_only(self):
+        """--style none has no tile padding, so the DEM ask stays the view."""
+        underlay = FakeBasemap(image=np.full((2, 2, 3), 255, dtype=np.uint8))
+        elevation = FakeElevation(image=np.full((8, 8), 500.0))
+        basemap = HillshadeBasemap(underlay, elevation, **SHADE_PARAMS)
+        basemap.get_image(VIEW, CRS, "auto")
+        assert elevation.calls[0]["bbox"] == VIEW
+
+    def test_a_dem_with_a_missing_border_does_not_black_out_the_frame(self):
+        """A NaN border in the DEM shaded to a black band in v0.3.0.
+
+        The border cells and the finite cells next to them (the gradient
+        spreads the gap one cell) must come out as flat-ground shade over
+        the underlay, never as zeros punched through the picture.
+        """
+        image = np.full((32, 32), 500.0)
+        image[0, :] = np.nan
+        image[-1, :] = np.nan
+        image[:, 0] = np.nan
+        image[:, -1] = np.nan
+        elevation = FakeElevation(image=image)
+        basemap = HillshadeBasemap(make_underlay(), elevation, **SHADE_PARAMS)
+        result = basemap.get_image(VIEW, CRS, "auto")
+        assert result.image.min() > 0

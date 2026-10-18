@@ -30,11 +30,23 @@ DEFAULT_AZIMUTH = 315.0
 """Light direction, degrees clockwise from north. From the north-west, the
 cartographic default, which reads as the sun high over the left shoulder."""
 
-DEFAULT_ALTITUDE = 45.0
-"""Height of the light above the horizon, in degrees."""
+DEFAULT_ALTITUDE = 35.0
+"""Height of the light above the horizon, in degrees.
 
-DEFAULT_Z_FACTOR = 1.0
-"""Vertical exaggeration. ``1.0`` is true relief; larger values dramatise it."""
+Below the textbook 45 on purpose: a lower light rakes across the slopes and
+reads as more dramatic relief. ``RenderConfig`` ships the same number, so a
+render without flags gets this angle.
+"""
+
+DEFAULT_Z_FACTOR = 1.4
+"""Vertical exaggeration. ``1.0`` is true relief; larger values dramatise it.
+
+The shipped default of 1.4 is roughly the ``1/cos(latitude)`` factor Web
+Mercator owes at mid latitudes, where the projection inflates ground distance
+and so computes slopes flatter than they are. See ``RenderConfig``: the same
+number ships there, and the CLI flag remains the place to dial it back to
+true relief.
+"""
 
 
 def shade(
@@ -60,11 +72,15 @@ def shade(
         z_factor: Vertical exaggeration, ``1.0`` for true relief.
 
     Returns:
-        A ``(rows, cols)`` ``uint8`` array in ``1..255``.
+        A ``(rows, cols)`` ``uint8`` array in ``1..255``. Cells the elevation
+        model never covered (``NaN``) shade as flat ground rather than black:
+        ``uint8(NaN)`` is 0, which would punch a hole through the basemap
+        along the data's edge, while a cell with no slope is what an
+        uncovered cell would have looked like.
 
     Raises:
-        ValueError: If the grid is not two-dimensional, or a pixel size, the
-            altitude or the z-factor is non-positive.
+        ValueError: If the grid is not two-dimensional, a pixel size is
+            non-positive, or the z-factor is non-positive.
     """
     grid = np.asarray(elevation, dtype=float)
     if grid.ndim != 2:
@@ -93,6 +109,12 @@ def shade(
         light_altitude
     ) * np.cos(slope) * np.cos(light_azimuth - np.pi / 2.0 - aspect)
     intensity = np.clip(intensity, 0.0, 1.0)
+
+    # A cell with no elevation computes as NaN all the way through (the
+    # gradient spreads it to its neighbours too), and NaN cast to uint8 is 0.
+    # Flat ground is what such a cell would have looked like: zero slope
+    # collapses the intensity to sin(altitude), so shade it that way.
+    intensity = np.where(np.isfinite(intensity), intensity, np.sin(light_altitude))
 
     levels = MIN_LEVEL + (MAX_LEVEL - MIN_LEVEL) * intensity
     return levels.astype(np.uint8)

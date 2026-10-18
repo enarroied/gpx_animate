@@ -15,6 +15,33 @@ Compare links are added at release time. The first release has no v0.0.0 tag to
 See AGENTS.md -> Versioning & releases.
 -->
 
+## [Unreleased]
+
+### Changed
+
+- **The shipped relief defaults now compensate for Web Mercator.** Shading runs
+  in Web Mercator, whose ground distance is inflated by `1/cos(latitude)`, so
+  slopes are computed flatter than they are and the terrain read as washed out
+  at mid latitudes. Two defaults change: `--hillshade-altitude` `45` → `35` and
+  `--hillshade-z` `1.0` → `1.4` (the latter close to the `1/cos(latitude)`
+  factor around lat 43). Both remain ordinary `RenderConfig` keys, so a config
+  file, a `GPX_ANIMATE_*` variable, a CLI flag or the GUI's Terrain tab
+  overrides them; `--hillshade-z 1.0` gets true relief back.
+
+### Fixed
+
+- **A black band ran along the map edge of every `--dem` render.** Two rounding
+  mistakes left the shaded grid with cells the elevation model never reached,
+  and those cells cast to black: the DEM read rounded its window to the *nearest*
+  pixel while the warp then asked for the full requested bounds, leaving an
+  untouched NaN border inside the raster (up to 16 pixels of solid black along
+  the bottom edge of a 1080p frame, plus a black hairline on the other edges);
+  and the DEM was fetched for the view while the shade grid is the *underlay's*
+  extent, which for tiles is rounded out to whole tiles. The read now rounds
+  outward and lays the destination over what it actually read, the DEM is asked
+  for the whole grid, and — belt and braces — a cell with no elevation now
+  shades as flat ground rather than as a hole in the map.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

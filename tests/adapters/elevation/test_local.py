@@ -139,6 +139,35 @@ class TestWindowing:
         for got, want in zip(raster.extent, view.extent, strict=True):
             assert got == pytest.approx(want, abs=5_000)
 
+    def test_a_fractional_window_covers_the_view_without_nan(self, tmp_path):
+        """The read rounds outward, so there is no NaN border and no short edge.
+
+        Bounds that land between pixel edges used to round to the nearest
+        pixel while the warp asked for the exact request: every cell the read
+        missed stayed at dst_nodata, an untouched NaN border that rendered as
+        a black band along the map edge.
+        """
+        dem = write_dem_file(tmp_path / "frac.tif")
+        view = Bbox(
+            *transform_bounds(
+                "EPSG:4326", WEB_MERCATOR, 7.0013, 45.0027, 7.0931, 45.0943
+            )
+        )
+        raster = LocalDem(dem).get_raster(view, WEB_MERCATOR)
+        assert not np.isnan(raster.image).any()
+        west, east, south, north = raster.extent
+        assert west <= view.min_x + 1e-6
+        assert east >= view.max_x - 1e-6
+        assert south <= view.min_y + 1e-6
+        assert north >= view.max_y - 1e-6
+
+    def test_a_view_past_the_file_edge_reads_what_exists_without_nan(self, tmp_path):
+        """Outward rounding still clamps to the array: no crash, no NaN."""
+        dem = write_dem_file(tmp_path / "edge.tif")
+        view = mercator_view((6.9, 44.9, 7.2, 45.2))
+        raster = LocalDem(dem).get_raster(view, WEB_MERCATOR)
+        assert not np.isnan(raster.image).any()
+
     def test_a_dem_that_does_not_overlap_is_rejected(self, tmp_path):
         ander = write_dem_file(tmp_path / "ander.tif", bounds=(20.0, 10.0, 20.1, 10.1))
         with pytest.raises(DemOutsideViewError, match="does not overlap"):

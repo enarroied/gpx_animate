@@ -35,8 +35,10 @@ class TestShade:
         """
         rows, cols = 6, 6
         plane = np.tile(np.arange(cols, dtype=float), (rows, 1))
-        from_west = shade(plane, azimuth=270.0, altitude=45.0)
-        from_east = shade(plane, azimuth=90.0, altitude=45.0)
+        # z_factor pinned: the shipped default exaggerates the gradient, which
+        # would move these hand-calculated exact values off 1 and 0.
+        from_west = shade(plane, azimuth=270.0, altitude=45.0, z_factor=1.0)
+        from_east = shade(plane, azimuth=90.0, altitude=45.0, z_factor=1.0)
         assert np.all(from_west == MAX_LEVEL)
         assert np.all(from_east == MIN_LEVEL)
 
@@ -58,6 +60,27 @@ class TestShade:
     def test_it_rejects_a_non_two_dimensional_grid(self):
         with pytest.raises(ValueError, match="2-D"):
             shade(np.zeros(4))
+
+    def test_missing_elevation_shades_as_flat_ground(self):
+        """A cell the DEM never covered must not become a hole in the map.
+
+        ``uint8(NaN)`` is 0, which reads as black punched through the
+        basemap wherever the data stops. Flat ground is what an uncovered
+        cell would have looked like, so that is what it must shade to --
+        and the gradient spreads the gap one cell further, which must land
+        on flat ground too, not black.
+        """
+        grid = np.full((5, 5), 500.0)
+        grid[2, 2] = np.nan
+        result = shade(grid, azimuth=315.0, altitude=45.0)
+        flat = int(MIN_LEVEL + (MAX_LEVEL - MIN_LEVEL) * np.sin(np.radians(45.0)))
+        assert result[2, 2] == flat
+        assert result.min() >= MIN_LEVEL
+
+    def test_a_fully_missing_grid_is_flat_not_black(self):
+        """No data anywhere still has to produce a shade, not zeros."""
+        result = shade(np.full((3, 3), np.nan))
+        assert result.min() >= MIN_LEVEL
 
     @pytest.mark.parametrize(
         ("kwargs", "match"),
