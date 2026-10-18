@@ -15,7 +15,7 @@ Compare links are added at release time. The first release has no v0.0.0 tag to
 See AGENTS.md -> Versioning & releases.
 -->
 
-## [Unreleased]
+## [0.3.0] - 2026-10-17
 
 ### Added
 
@@ -235,3 +235,4 @@ whole feature set rather than a delta.
 [0.1.1]: https://github.com/enarroied/gpx_animate/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/enarroied/gpx_animate/releases/tag/v0.1.0
 [0.2.0]: https://github.com/enarroied/gpx_animate/compare/v0.1.1...v0.2.0
+[0.3.0]: https://github.com/enarroied/gpx_animate/compare/v0.2.0...v0.3.0
