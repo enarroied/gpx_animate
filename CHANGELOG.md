@@ -53,6 +53,14 @@ See AGENTS.md -> Versioning & releases.
   for the whole grid, and — belt and braces — a cell with no elevation now
   shades as flat ground rather than as a hole in the map.
 
+### Security
+
+- **Dependency advisories:** `uv lock --upgrade-package` lifts six packages past
+  their published CVEs — `certifi` 2026.7.22 → 2026.10.23, `filelock` 4.0.3 →
+  4.2.12, `msgpack` 1.2.2 → 1.2.4, `pillow` 12.3.0 → 13.0.0, `setuptools`
+  84.0.0 → 84.2.1 and `virtualenv` 21.12.1 → 21.15.9. `pip-audit` now reports no
+  known vulnerabilities, so the `[tool.review]` deps check stays green.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added
