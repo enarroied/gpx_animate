@@ -117,3 +117,14 @@ exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
 ]
+
+[tool.review]
+checks = [
+  { name = "ruff",        cmd = "ruff check --output-format=concise {py}", when = "py" },
+  { name = "ruff format", cmd = "ruff format --check {py}",                when = "py" },
+  { name = "vulture",     cmd = "vulture src tests --min-confidence=80",  when = "py" },
+  { name = "ty",          cmd = "ty check",                               when = "py" },
+  { name = "pytest",      cmd = "pytest -q --tb=line",                    when = "py", env = { QT_QPA_PLATFORM = "offscreen" } },
+  { name = "pip-audit",   cmd = "pip-audit",                              when = "deps" },
+  { name = "pre-commit",  cmd = "pre-commit run --files {all}",           when = "any", requires = ".pre-commit-config.yaml" },
+]
