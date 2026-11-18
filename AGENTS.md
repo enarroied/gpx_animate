@@ -42,7 +42,7 @@ src/gpx_animate/
 - `tests/` mirrors the package layout: `tests/domain/`, `tests/application/`,
   `tests/adapters/`, `tests/config/`, plus `tests/fakes.py` (in-memory port
   implementations) and `tests/fixtures/`. 98% statement coverage, with a 90%
-  floor in `[tool.coverage.report] fail_under`. 1026 tests: 1017 offline plus 9
+  floor in `[tool.coverage.report] fail_under`. 1041 tests: 1032 offline plus 9
   `integration`-marked ones, including a
   headless `pytest-qt` suite for the GUI.
 - The `integration`-marked tests are **deselected by default** (`addopts` has
@@ -124,7 +124,7 @@ uv run ruff check .            # lint          (--fix to autofix)
 uv run ruff format .           # format        (--check in CI)
 uv run ty check src tests      # type check
 uv run vulture src tests --min-confidence 80
-uv run pytest -q               # 1017 tests, offline (tiles and TIFFs are faked)
+uv run pytest -q               # 1032 tests, offline (tiles and TIFFs are faked)
 uv run pytest -m integration   # needs ffmpeg + tile servers
 uv run pre-commit run --all-files
 ```
@@ -198,6 +198,21 @@ published release.
   `BasemapImage` (ndarray + extent) instead of an `axes`, so it names no
   matplotlib type at all. `domain/bbox.py` may not import rasterio either: it is
   pure arithmetic, and the reading of the file lives in the adapter.
+- **`elevation_gain_m` filters before it sums, and that is the whole point.** A
+  plain sum of positive sample-to-sample steps is dominated by altitude noise:
+  barometric jitter of a metre or two per sample added up to 2718 m on a
+  1745-point sample file whose filtered climb is 734 m. Each gap-free run is
+  median-filtered (an isolated spike would otherwise survive a mean pass as a
+  wide phantom hump), mean-filtered, then summed through a 2 m hysteresis band;
+  the band, unlike a per-step cutoff, still counts a gradual climb built from
+  1 m steps. Missing elevations go through `interpolated_elevations` first: a
+  hole of up to `MAX_INTERPOLATED_GAP` samples is filled linearly (the chart
+  draws the same series, so it no longer plunges to zero), edge holes take the
+  nearest value, and a longer hole stays `nan` so the chart breaks its line and
+  `_runs` measures gain on each side. Treating a missing elevation as 0.0 is the
+  bug this replaced. The knobs are `ELEVATION_SMOOTHING_WINDOW`,
+  `ASCENT_THRESHOLD_M` and `MAX_INTERPOLATED_GAP` in `domain/track.py`; don't
+  "simplify" it back to `if current > previous`.
 - `matplotlib.use("Agg")` must stay before `import matplotlib.pyplot` inside
   `adapters/renderers/matplotlib_renderer.py`; the two `# noqa: E402` comments
   exist for that reason. The same pattern is load-bearing in

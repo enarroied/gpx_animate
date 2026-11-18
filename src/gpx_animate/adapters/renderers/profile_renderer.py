@@ -56,7 +56,7 @@ class ProfileRenderer:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         dists = track.cumulative_distance_km()
-        elevations = track.elevations
+        elevations = track.interpolated_elevations()
         n_draw_frames = config.n_draw_frames
         n_frames = config.n_frames
         n_total = len(dists)

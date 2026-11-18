@@ -34,7 +34,7 @@ class TestSuccess:
         assert track.elevations[0] == 100.0
         assert track.elevations.max() > track.elevations.min()
 
-    def test_missing_elevation_becomes_zero(self, tmp_path):
+    def test_missing_elevation_reads_as_zero_in_the_array(self, tmp_path):
         gpx = tmp_path / "flat.gpx"
         gpx.write_text(
             '<gpx version="1.1" creator="test">'
@@ -42,7 +42,24 @@ class TestSuccess:
             '<trkpt lat="45.0" lon="7.0"/><trkpt lat="45.1" lon="7.1"/>'
             "</trkseg></trk></gpx>"
         )
-        assert load_track(gpx).elevations.tolist() == [0.0, 0.0]
+        track = load_track(gpx)
+        assert track.elevations.tolist() == [0.0, 0.0]
+        assert track.points[0].elevation is None
+
+    def test_a_mixed_file_keeps_the_gaps(self, tmp_path):
+        """Missing elevations stay ``None`` so gain can skip the gap."""
+        gpx = tmp_path / "mixed.gpx"
+        gpx.write_text(
+            '<gpx version="1.1" creator="test">'
+            "<trk><trkseg>"
+            '<trkpt lat="45.0" lon="7.0"><ele>100.0</ele></trkpt>'
+            '<trkpt lat="45.1" lon="7.1"/>'
+            "</trkseg></trk></gpx>"
+        )
+        track = load_track(gpx)
+        assert track.points[0].elevation == 100.0
+        assert track.points[1].elevation is None
+        assert track.elevation_gain_m() == 0.0
 
     def test_flattens_every_track_and_segment(self, tmp_path):
         """GPX allows several tracks, each with several segments.

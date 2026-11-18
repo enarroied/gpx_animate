@@ -161,14 +161,19 @@ def _limits(values: np.ndarray) -> tuple[float, float]:
     """A min/max pair that is never equal, for a matplotlib axis limit.
 
     Args:
-        values: The data the axis will show.
+        values: The data the axis will show. ``nan`` entries -- the marker for a
+            gap too long to interpolate -- are ignored, so a broken profile does
+            not collapse the axis.
 
     Returns:
         ``(low, high)``, widened by :data:`DEGENERATE_SPAN` when the data does
         not vary, because equal limits draw nothing and warn.
     """
-    low = float(values.min())
-    high = float(values.max())
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0, DEGENERATE_SPAN
+    low = float(finite.min())
+    high = float(finite.max())
     if high - low < DEGENERATE_SPAN:
         return low - DEGENERATE_SPAN, high + DEGENERATE_SPAN
     return low, high
@@ -230,12 +235,13 @@ def draw_chart_on(
     # ndarray, so normalise here rather than at each of the two call sites.
     dists = np.asarray(dists)
     elevations = np.asarray(elevations)
+    low, high = _limits(elevations)
 
     chart_ax.plot(
         dists, elevations, color=style.track_bright, linewidth=CURVE_LINEWIDTH
     )
     chart_ax.fill_between(
-        dists, elevations, elevations.min(), color=style.track_bright, alpha=FILL_ALPHA
+        dists, elevations, low, color=style.track_bright, alpha=FILL_ALPHA
     )
     chart_ax.set_facecolor(style.bg_color)
     chart_ax.patch.set_alpha(PANEL_ALPHA)
@@ -249,7 +255,7 @@ def draw_chart_on(
     chart_ax.set_xlabel("km", color=style.hud_color, fontsize=7)
     chart_ax.set_ylabel("m", color=style.hud_color, fontsize=7)
     chart_ax.set_xlim(*_limits(dists))
-    chart_ax.set_ylim(*_limits(elevations))
+    chart_ax.set_ylim(low, high)
 
     cursor = chart_ax.axvline(
         dists[0],

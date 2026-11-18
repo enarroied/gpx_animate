@@ -257,7 +257,7 @@ class MatplotlibRenderer:
         dists = track.cumulative_distance_km()
         total_km = dists[-1] if dists else 0.0
         total_gain = track.elevation_gain_m()
-        ele = track.elevations
+        ele = track.interpolated_elevations()
 
         n_draw_frames = config.n_draw_frames
         n_frames = config.n_frames
@@ -399,6 +399,7 @@ class MatplotlibRenderer:
         marker_logo = self._draw_logos(ax, config, X, Y, view, fig)
 
         frame_paths: list[Path] = []
+        last_ele = float(ele[0])
         for index in range(n_frames):
             # The shared helper is the single source of truth for progress:
             # the standalone chart video has to land on the same frame as this
@@ -413,7 +414,13 @@ class MatplotlibRenderer:
                 marker_logo(X[n_points - 1], Y[n_points - 1])
 
             done_km = dists[n_points - 1]
-            done_ele = ele[n_points - 1]
+            done_ele = float(ele[n_points - 1])
+            if np.isnan(done_ele):
+                # A gap too long to bridge: keep the last reading on screen
+                # rather than printing "nan" until the track resumes.
+                done_ele = last_ele
+            else:
+                last_ele = done_ele
             hud.set_text(
                 f"Distance   {done_km:5.1f} / {total_km:.1f} km\n"
                 f"Elevation  {done_ele:5.0f} m  (+{total_gain:.0f} m total)"

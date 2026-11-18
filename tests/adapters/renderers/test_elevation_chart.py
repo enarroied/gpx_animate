@@ -285,6 +285,21 @@ class TestDrawChartOn:
         draw_chart_on(parent, DISTS, ELEVATIONS, DEFAULT_STYLE)
         assert 0.0 < parent.patch.get_alpha() < 1.0
 
+    def test_a_profile_with_nan_gaps_is_drawn_and_scaled(self, parent):
+        """A gap too long to interpolate stays nan; it must not poison the axis."""
+        elevations = ELEVATIONS.copy()
+        elevations[80:100] = np.nan
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            handle = draw_chart_on(parent, DISTS, elevations, DEFAULT_STYLE)
+        low, high = handle.axes.get_ylim()
+        assert low == pytest.approx(np.nanmin(elevations))
+        assert high == pytest.approx(np.nanmax(elevations))
+
+    def test_all_nan_limits_fall_back_to_a_drawable_span(self):
+        low, high = elevation_chart._limits(np.array([np.nan, np.nan]))
+        assert high > low
+
     def test_a_flat_profile_does_not_warn(self, parent):
         """Equal axis limits draw nothing, so they are widened instead."""
         with warnings.catch_warnings():

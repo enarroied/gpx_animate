@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from gpx_animate.domain.track import EARTH_RADIUS_KM
+from gpx_animate.domain.track import MAX_INTERPOLATED_GAP
 from gpx_animate.domain.track import Point
 from gpx_animate.domain.track import Track
 from gpx_animate.domain.track import haversine_km
@@ -67,9 +68,15 @@ class TestTrackConstruction:
             Point(4.0, 5.0, 6.0),
         )
 
-    def test_a_falsy_elevation_becomes_zero(self):
+    def test_zero_elevation_stays_zero(self):
         track = Track.from_rows([(1.0, 2.0, 0.0), (4.0, 5.0, 0.0)])
         assert track.elevations.tolist() == [0.0, 0.0]
+        assert track.points[0].elevation == 0.0
+
+    def test_a_missing_elevation_stays_missing(self):
+        track = Track.from_rows([(1.0, 2.0, None), (4.0, 5.0, 6.0)])
+        assert track.points[0].elevation is None
+        assert track.elevations.tolist() == [0.0, 6.0]
 
     def test_an_empty_track_is_rejected(self):
         """No points means no bounding box and nothing to draw."""
@@ -128,8 +135,30 @@ class TestCumulativeDistance:
 
 
 class TestElevationGain:
-    def test_sums_only_the_climbing_steps(self, track: Track):
-        assert track.elevation_gain_m() == pytest.approx(10.0 + 25.0 + 15.0)
+    def test_a_steady_climb_sums_its_rise(self):
+        """A clean ramp is measured almost whole; only the ends are filtered."""
+        track = Track.from_rows([(0.0, 0.0, e) for e in range(100, 201, 10)])
+        assert track.elevation_gain_m() == pytest.approx(88.0)
+
+    def test_a_gentle_climb_of_sub_threshold_steps_still_counts(self):
+        """Ten one-metre steps are a climb even though no step passes 2 m.
+
+        A plain per-step threshold would throw this away; the hysteresis band
+        accumulates it instead.
+        """
+        track = Track.from_rows([(0.0, 0.0, e) for e in range(100, 151)])
+        assert track.elevation_gain_m() == pytest.approx(48.8)
+
+    def test_gps_jitter_on_a_flat_road_is_not_climbing(self):
+        elevations = [100.0, 101.5] * 30
+        track = Track.from_rows([(0.0, 0.0, e) for e in elevations])
+        assert track.elevation_gain_m() == 0.0
+
+    def test_an_isolated_spike_is_not_climbing(self):
+        """A single 50 m dropout would otherwise leak through the mean filter."""
+        elevations = [100.0] * 20 + [150.0] + [100.0] * 20
+        track = Track.from_rows([(0.0, 0.0, e) for e in elevations])
+        assert track.elevation_gain_m() == 0.0
 
     def test_flat_track_has_no_gain(self):
         assert (
@@ -150,8 +179,66 @@ class TestElevationGain:
         assert track.elevation_gain_m() == 0.0
 
     def test_missing_elevation_does_not_create_gain(self):
+        """A gap is not a descent to sea level followed by a climb back."""
         track = Track(points=(Point(0.0, 0.0), Point(0.1, 0.1, 500.0)))
-        assert track.elevation_gain_m() == pytest.approx(500.0)
+        assert track.elevation_gain_m() == 0.0
+
+    def test_a_short_gap_matches_the_unbroken_profile(self):
+        """A single lost sample is estimated back to where it belongs."""
+        intact = Track.from_rows([(0.0, 0.0, 100.0 + 2 * i) for i in range(21)])
+        rows = [(0.0, 0.0, None if i == 10 else 100.0 + 2 * i) for i in range(21)]
+        assert Track.from_rows(rows).elevation_gain_m() == pytest.approx(
+            intact.elevation_gain_m()
+        )
+
+    def test_a_long_gap_is_not_bridged(self):
+        """Bridging a discontinuity would invent a climb across it."""
+        rows = (
+            [(0.0, 0.0, 100.0)]
+            + [(0.0, 0.0, None)] * (MAX_INTERPOLATED_GAP + 1)
+            + [(0.0, 0.0, 500.0)]
+        )
+        assert Track.from_rows(rows).elevation_gain_m() == 0.0
+
+
+class TestInterpolatedElevations:
+    def test_fills_a_short_interior_gap(self):
+        track = Track.from_rows(
+            [(0.0, 0.0, 100.0), (0.1, 0.0, None), (0.2, 0.0, 200.0)]
+        )
+        assert track.interpolated_elevations().tolist() == [100.0, 150.0, 200.0]
+
+    def test_holds_the_nearest_value_at_the_edges(self):
+        """There is only one side to estimate an edge gap from."""
+        track = Track.from_rows(
+            [(0.0, 0.0, None), (0.1, 0.0, 100.0), (0.2, 0.0, 200.0), (0.3, 0.0, None)]
+        )
+        assert track.interpolated_elevations().tolist() == [100.0, 100.0, 200.0, 200.0]
+
+    def test_a_long_gap_stays_nan(self):
+        rows = (
+            [(0.0, 0.0, 100.0)]
+            + [(0.0, 0.0, None)] * (MAX_INTERPOLATED_GAP + 1)
+            + [(0.0, 0.0, 200.0)]
+        )
+        values = Track.from_rows(rows).interpolated_elevations()
+        assert values[0] == 100.0
+        assert values[-1] == 200.0
+        assert np.isnan(values[1:-1]).all()
+
+    def test_the_bridge_can_be_narrowed(self):
+        track = Track.from_rows(
+            [(0.0, 0.0, 100.0), (0.1, 0.0, None), (0.2, 0.0, 200.0)]
+        )
+        assert np.isnan(track.interpolated_elevations(max_gap=0)[1])
+
+    def test_no_elevation_at_all_reads_as_zeros(self):
+        track = Track.from_rows([(0.0, 0.0, None), (0.1, 0.0, None)])
+        assert track.interpolated_elevations().tolist() == [0.0, 0.0]
+
+    def test_known_values_are_untouched(self):
+        track = Track.from_rows([(0.0, 0.0, 10.0), (0.1, 0.0, 20.0)])
+        assert track.interpolated_elevations().tolist() == [10.0, 20.0]
 
 
 class TestNumpyInterop:

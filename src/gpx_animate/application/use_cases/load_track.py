@@ -40,7 +40,7 @@ def load_track(gpx_path: Path) -> Track:
 
     name = gpx.name or gpx_path.stem.replace("_", " ").title()
     rows = [
-        (point.longitude, point.latitude, point.elevation or 0.0)
+        (point.longitude, point.latitude, point.elevation)
         for track in gpx.tracks
         for segment in track.segments
         for point in segment.points
@@ -49,7 +49,7 @@ def load_track(gpx_path: Path) -> Track:
     if not rows:
         # Fall back to routes: planners export a planned path that way.
         rows = [
-            (point.longitude, point.latitude, point.elevation or 0.0)
+            (point.longitude, point.latitude, point.elevation)
             for route in gpx.routes
             for point in route.points
         ]

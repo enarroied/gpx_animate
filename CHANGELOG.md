@@ -30,6 +30,17 @@ See AGENTS.md -> Versioning & releases.
 
 ### Fixed
 
+- **Elevation gain no longer counts GPS altitude noise as climbing.** The HUD's
+  `+N m total` was a plain sum of every positive sample-to-sample step, so
+  barometric jitter of a metre or two per sample added up to hundreds of phantom
+  metres over a long track: a 1745-point sample file reported 2718 m where the
+  filtered profile climbs 734 m. Consecutive elevations are now median- then
+  mean-filtered over a 5-point window and summed through a 2 m hysteresis band,
+  which still counts a gradual climb built from sub-threshold steps. A missing
+  `<ele>` no longer reads as sea level: a short hole is linearly interpolated
+  from its neighbours (so the chart stops plunging to zero), and a hole longer
+  than ten samples is left as `nan` — the chart breaks its line and gain is
+  measured on each side rather than across an invented slope.
 - **A black band ran along the map edge of every `--dem` render.** Two rounding
   mistakes left the shaded grid with cells the elevation model never reached,
   and those cells cast to black: the DEM read rounded its window to the *nearest*
